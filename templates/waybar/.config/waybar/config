@@ -68,6 +68,12 @@
       "on-click-right": "ghostty",
       "tooltip-format": "Keystone Desktop"
     },
+    "custom/disk-health": {
+      "exec": "keystone-disk-monitor waybar",
+      "interval": 30,
+      "return-type": "json",
+      "tooltip": true
+    },
     "custom/screenrecording-indicator": {
       "exec": "pgrep -f '[g]pu-screen-recorder' >/dev/null && echo '{\"text\": \"󰻂\", \"tooltip\": \"Stop recording\", \"class\": \"active\"}' || echo '{\"text\": \"\"}'",
       "on-click": "keystone-screenrecord",
@@ -112,6 +118,7 @@
       "network",
       "pulseaudio",
       "cpu",
+      "custom/disk-health",
       "battery"
     ],
     "network": {

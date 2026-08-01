@@ -84,3 +84,26 @@ tooltip {
   color: #ef5350;
   font-weight: bold;
 }
+
+#battery.warning:not(.charging):not(.plugged),
+#custom-disk-health.warning {
+  color: #e0af68;
+  font-weight: bold;
+}
+
+#battery.critical:not(.charging):not(.plugged),
+#custom-disk-health.critical {
+  color: #ef5350;
+  font-weight: bold;
+}
+
+#custom-disk-health.warning,
+#custom-disk-health.critical {
+  min-width: 12px;
+  margin: 0 7.5px;
+}
+
+#custom-disk-health.healthy {
+  margin: 0;
+  padding: 0;
+}

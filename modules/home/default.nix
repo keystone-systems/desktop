@@ -43,6 +43,42 @@ in
       description = "Default browser binary name. Used by the $mod+B keybinding.";
     };
 
+    health = {
+      battery = {
+        warningPercent = mkOption {
+          type = types.ints.between 1 100;
+          default = 20;
+          description = "Battery percentage that triggers a low-battery warning.";
+        };
+
+        criticalPercent = mkOption {
+          type = types.ints.between 1 100;
+          default = 10;
+          description = "Battery percentage that triggers a critical low-battery warning.";
+        };
+      };
+
+      disk = {
+        path = mkOption {
+          type = types.str;
+          default = "/";
+          description = "Filesystem path monitored for low free space.";
+        };
+
+        warningUsedPercent = mkOption {
+          type = types.ints.between 1 100;
+          default = 80;
+          description = "Disk utilization percentage that triggers a warning.";
+        };
+
+        criticalUsedPercent = mkOption {
+          type = types.ints.between 1 100;
+          default = 90;
+          description = "Disk utilization percentage that triggers a critical warning.";
+        };
+      };
+    };
+
     uhk = {
       enable = mkOption {
         type = types.bool;
@@ -121,6 +157,21 @@ in
   };
 
   config = mkIf cfg.enable {
+    assertions = [
+      {
+        assertion = cfg.health.battery.criticalPercent < cfg.health.battery.warningPercent;
+        message = "keystone.desktop.health.battery.criticalPercent must be below warningPercent";
+      }
+      {
+        assertion = cfg.health.disk.warningUsedPercent < cfg.health.disk.criticalUsedPercent;
+        message = "keystone.desktop.health.disk.warningUsedPercent must be below criticalUsedPercent";
+      }
+      {
+        assertion = lib.hasPrefix "/" cfg.health.disk.path;
+        message = "keystone.desktop.health.disk.path must be an absolute path";
+      }
+    ];
+
     # UHK Agent copies firmware docs from the Nix store into ~/.config/uhk-agent.
     # Those source files are read-only, and the app preserves that mode, which
     # breaks later updates when it tries to refresh docs for the current firmware.

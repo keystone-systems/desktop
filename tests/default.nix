@@ -319,6 +319,7 @@ in
       '';
 
   desktop-walker-surfaces = import ./module/desktop-walker-surfaces.nix { inherit pkgs; };
+  desktop-health-monitor = import ./module/desktop-health-monitor.nix { inherit pkgs; };
   desktop-fprintd = import ./module/desktop-fprintd.nix {
     inherit
       pkgs

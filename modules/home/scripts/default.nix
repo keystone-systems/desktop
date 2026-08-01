@@ -304,30 +304,36 @@ let
     builtins.readFile ./keystone-notes-inbox.sh
   );
 
-  # Battery monitor script
-  keystoneBatteryMonitor = pkgs.writeShellScriptBin "keystone-battery-monitor" ''
-    BATTERY_THRESHOLD=10
-    NOTIFICATION_FLAG="/run/user/$UID/keystone_battery_notified"
+  keystoneBatteryMonitor = pkgs.writeShellApplication {
+    name = "keystone-battery-monitor";
+    runtimeInputs = with pkgs; [
+      coreutils
+      gawk
+      gnugrep
+      libnotify
+      upower
+    ];
+    text = ''
+      export KEYSTONE_BATTERY_WARNING_PERCENT=${toString cfg.health.battery.warningPercent}
+      export KEYSTONE_BATTERY_CRITICAL_PERCENT=${toString cfg.health.battery.criticalPercent}
+      ${builtins.readFile ./keystone-battery-monitor.sh}
+    '';
+  };
 
-    # Get battery level
-    BATTERY_LEVEL=$(${pkgs.upower}/bin/upower -i $(${pkgs.upower}/bin/upower -e | grep 'BAT') | grep -E "percentage" | awk '{print $2}' | tr -d '%')
-    BATTERY_STATE=$(${pkgs.upower}/bin/upower -i $(${pkgs.upower}/bin/upower -e | grep 'BAT') | grep -E "state" | awk '{print $2}')
-
-    send_notification() {
-      ${pkgs.libnotify}/bin/notify-send -u critical " Time to recharge!" "Battery is down to ''${1}%" -i battery-caution -t 30000
-    }
-
-    if [[ -n "$BATTERY_LEVEL" && "$BATTERY_LEVEL" =~ ^[0-9]+$ ]]; then
-      if [[ $BATTERY_STATE == "discharging" && $BATTERY_LEVEL -le $BATTERY_THRESHOLD ]]; then
-        if [[ ! -f $NOTIFICATION_FLAG ]]; then
-          send_notification $BATTERY_LEVEL
-          touch $NOTIFICATION_FLAG
-        fi
-      else
-        rm -f $NOTIFICATION_FLAG
-      fi
-    fi
-  '';
+  keystoneDiskMonitor = pkgs.writeShellApplication {
+    name = "keystone-disk-monitor";
+    runtimeInputs = with pkgs; [
+      coreutils
+      jq
+      libnotify
+    ];
+    text = ''
+      export KEYSTONE_DISK_PATH=${escapeShellArg cfg.health.disk.path}
+      export KEYSTONE_DISK_WARNING_USED_PERCENT=${toString cfg.health.disk.warningUsedPercent}
+      export KEYSTONE_DISK_CRITICAL_USED_PERCENT=${toString cfg.health.disk.criticalUsedPercent}
+      ${builtins.readFile ./keystone-disk-monitor.sh}
+    '';
+  };
 
   # Startup lock wrapper. Launches hyprlock at session start and terminates the
   # session if the lock surface never appears.
@@ -633,6 +639,7 @@ in
             keystoneIdleToggle
             keystoneNightlightToggle
             keystoneBatteryMonitor
+            keystoneDiskMonitor
             keystoneDetach
             pkgs.jq
             pkgs.pulseaudio
@@ -656,6 +663,30 @@ in
           systemd.user.timers.keystone-battery-monitor = {
             Unit = {
               Description = "Timer for low battery notification";
+            };
+            Timer = {
+              OnBootSec = "1min";
+              OnUnitActiveSec = "1min";
+            };
+            Install = {
+              WantedBy = [ "timers.target" ];
+            };
+          };
+
+          # Report filesystem pressure to both Mako and Waybar.
+          systemd.user.services.keystone-disk-monitor = {
+            Unit = {
+              Description = "Keystone disk usage notification";
+            };
+            Service = {
+              Type = "oneshot";
+              ExecStart = "${keystoneDiskMonitor}/bin/keystone-disk-monitor notify";
+            };
+          };
+
+          systemd.user.timers.keystone-disk-monitor = {
+            Unit = {
+              Description = "Timer for disk usage notification";
             };
             Timer = {
               OnBootSec = "1min";
