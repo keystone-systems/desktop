@@ -1,0 +1,158 @@
+[
+  {
+    "battery": {
+      "format": "{capacity}% {icon}",
+      "format-charging": "{icon}",
+      "format-discharging": "{icon}",
+      "format-full": "󰂅",
+      "format-icons": {
+        "charging": [
+          "󰢜",
+          "󰂆",
+          "󰂇",
+          "󰂈",
+          "󰢝",
+          "󰂉",
+          "󰢞",
+          "󰂊",
+          "󰂋",
+          "󰂅"
+        ],
+        "default": [
+          "󰁺",
+          "󰁻",
+          "󰁼",
+          "󰁽",
+          "󰁾",
+          "󰁿",
+          "󰂀",
+          "󰂁",
+          "󰂂",
+          "󰁹"
+        ]
+      },
+      "format-plugged": "",
+      "interval": 5,
+      "on-click": "keystone-menu system",
+      "states": {
+        "critical": 10,
+        "warning": 20
+      },
+      "tooltip-format-charging": "{power:>1.0f}W↑ {capacity}%",
+      "tooltip-format-discharging": "{power:>1.0f}W↓ {capacity}%"
+    },
+    "bluetooth": {
+      "format": "",
+      "format-connected": "󰂱",
+      "format-disabled": "󰂲",
+      "format-no-controller": "",
+      "on-click": "blueman-manager",
+      "tooltip-format": "Devices connected: {num_connections}"
+    },
+    "clock": {
+      "format": "{:L%A %H:%M}",
+      "format-alt": "{:L%d %B W%V %Y}",
+      "tooltip": false
+    },
+    "cpu": {
+      "format": "󰍛",
+      "interval": 5,
+      "on-click": "ghostty -e btop"
+    },
+    "custom/expand-icon": {
+      "format": "",
+      "tooltip": false
+    },
+    "custom/keystone": {
+      "format": "",
+      "on-click-right": "ghostty",
+      "tooltip-format": "Keystone Desktop"
+    },
+    "custom/screenrecording-indicator": {
+      "exec": "pgrep -f '[g]pu-screen-recorder' >/dev/null && echo '{\"text\": \"󰻂\", \"tooltip\": \"Stop recording\", \"class\": \"active\"}' || echo '{\"text\": \"\"}'",
+      "on-click": "keystone-screenrecord",
+      "return-type": "json",
+      "signal": 8
+    },
+    "group/tray-expander": {
+      "drawer": {
+        "children-class": "tray-group-item",
+        "transition-duration": 600
+      },
+      "modules": [
+        "custom/expand-icon",
+        "tray"
+      ],
+      "orientation": "inherit"
+    },
+    "height": 26,
+    "hyprland/workspaces": {
+      "format": "{name}",
+      "on-click": "activate",
+      "persistent-workspaces": {
+        "1": [],
+        "2": [],
+        "3": [],
+        "4": [],
+        "5": []
+      }
+    },
+    "layer": "top",
+    "modules-center": [
+      "clock",
+      "custom/screenrecording-indicator"
+    ],
+    "modules-left": [
+      "custom/keystone",
+      "hyprland/workspaces"
+    ],
+    "modules-right": [
+      "group/tray-expander",
+      "bluetooth",
+      "network",
+      "pulseaudio",
+      "cpu",
+      "battery"
+    ],
+    "network": {
+      "format": "{icon}",
+      "format-disconnected": "󰤮",
+      "format-ethernet": "󰀂",
+      "format-icons": [
+        "󰤯",
+        "󰤟",
+        "󰤢",
+        "󰤥",
+        "󰤨"
+      ],
+      "format-wifi": "{icon}",
+      "interval": 3,
+      "on-click": "keystone-wifi-menu open-menu",
+      "spacing": 1,
+      "tooltip-format-disconnected": "Disconnected",
+      "tooltip-format-ethernet": "⇣{bandwidthDownBytes}  ⇡{bandwidthUpBytes}",
+      "tooltip-format-wifi": "{essid} ({frequency} GHz)\n⇣{bandwidthDownBytes}  ⇡{bandwidthUpBytes}"
+    },
+    "position": "top",
+    "pulseaudio": {
+      "format": "{icon}",
+      "format-icons": {
+        "default": [
+          "",
+          "",
+          ""
+        ]
+      },
+      "format-muted": "",
+      "on-click-right": "wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle",
+      "scroll-step": 5,
+      "tooltip-format": "Playing at {volume}%"
+    },
+    "reload_style_on_change": true,
+    "spacing": 0,
+    "tray": {
+      "icon-size": 12,
+      "spacing": 17
+    }
+  }
+]

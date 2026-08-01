@@ -1,0 +1,57 @@
+@define-color selected-text #12B27D;
+@define-color text #B6BFBC;
+@define-color base #001F14;
+@define-color border #002E1F;
+@define-color foreground #001F14;
+@define-color background #001F14;
+
+* {
+  font-family: monospace;
+  font-size: 18px;
+  color: @text;
+}
+
+window {
+  background-color: alpha(@base, 0.95);
+  border: 2px solid @border;
+}
+
+#outer-box {
+  padding: 20px;
+}
+
+#input {
+  margin-bottom: 10px;
+  padding: 10px;
+  color: @text;
+  background-color: @base;
+  border: none;
+  box-shadow: none;
+}
+
+#scroll {
+  background-color: transparent;
+}
+
+#entry {
+  padding: 14px;
+  color: @text;
+  background-color: transparent;
+}
+
+#entry:selected {
+  color: @selected-text;
+  background-color: transparent;
+}
+
+#img {
+  margin-right: 14px;
+}
+
+#text {
+  color: inherit;
+}
+
+#text:selected {
+  color: @selected-text;
+}

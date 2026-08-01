@@ -1,0 +1,86 @@
+@import "../themes/current/waybar.css";
+
+* {
+  background-color: @background;
+  color: @foreground;
+  border: none;
+  border-radius: 0;
+  min-height: 0;
+  font-family: 'JetBrainsMono Nerd Font';
+  font-size: 12px;
+}
+
+.modules-left {
+  margin-left: 8px;
+}
+
+.modules-right {
+  margin-right: 8px;
+}
+
+/* Base workspace button styling - DO NOT use "all: initial" as it breaks CSS cascade */
+#workspaces button {
+  font-family: 'JetBrainsMono Nerd Font';
+  font-size: 12px;
+  font-weight: normal;
+  background-color: transparent;
+  color: @foreground;
+  padding: 0 6px;
+  margin: 0 1.5px;
+  min-width: 9px;
+  border: none;
+  border-radius: 0;
+}
+
+/* Empty workspaces - less visible */
+#workspaces button.empty {
+  opacity: 0.5;
+}
+
+/* Active workspace - MUST come last for CSS cascade priority */
+#workspaces button.active, #workspaces button.active label {
+  color: #B8A26C;
+  font-weight: bold;
+}
+
+#cpu,
+#battery,
+#pulseaudio,
+#custom-keystone {
+  min-width: 12px;
+  margin: 0 7.5px;
+}
+
+#tray {
+  margin-right: 16px;
+}
+
+#bluetooth {
+  margin-right: 17px;
+}
+
+#network {
+  margin-right: 13px;
+}
+
+#custom-expand-icon {
+  margin-right: 18px;
+}
+
+tooltip {
+  padding: 2px;
+}
+
+#clock {
+  margin-left: 8.75px;
+}
+
+#custom-screenrecording-indicator {
+  min-width: 20px;
+  padding: 0 8px;
+}
+
+#custom-screenrecording-indicator.active {
+  color: #ef5350;
+  font-weight: bold;
+}

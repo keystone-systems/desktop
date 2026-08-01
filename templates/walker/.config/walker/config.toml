@@ -1,0 +1,180 @@
+actions_as_menu = true
+force_keyboard_focus = true
+hide_action_hints = false
+resume_last_query = false
+selection_wrap = true
+theme = "keystone"
+
+[keybinds]
+next = ["Down"]
+previous = ["Up"]
+quick_activate = []
+show_actions = []
+
+[placeholders.default]
+input = " Search..."
+list = "No Results"
+
+[placeholders."menus:keystone-account-calendar"]
+input = " Calendars"
+list = "No calendars found"
+
+[placeholders."menus:keystone-account-events"]
+input = " Events"
+list = "No events found"
+
+[placeholders."menus:keystone-account-mailbox"]
+input = " Mail"
+list = "No mail found"
+
+[placeholders."menus:keystone-account-sections"]
+input = " Account actions"
+list = "No account actions available"
+
+[placeholders."menus:keystone-accounts"]
+input = " Accounts"
+list = "No accounts found"
+
+[placeholders."menus:keystone-agent-actions"]
+input = " Agent actions"
+list = "No agent actions available"
+
+[placeholders."menus:keystone-agents"]
+input = " Agents"
+list = "No agents found"
+
+[placeholders."menus:keystone-audio"]
+input = " Audio"
+list = "No audio actions available"
+
+[placeholders."menus:keystone-audio-devices"]
+input = " Audio devices"
+list = "No audio devices found"
+
+[placeholders."menus:keystone-capture"]
+input = " Capture"
+list = "No capture actions available"
+
+[placeholders."menus:keystone-fingerprint"]
+input = " Fingerprint"
+list = "No fingerprint actions available"
+
+[placeholders."menus:keystone-hardware"]
+input = " Hardware"
+list = "No hardware actions available"
+
+[placeholders."menus:keystone-install"]
+input = " Install"
+list = "No install actions available"
+
+[placeholders."menus:keystone-learn"]
+input = " Learn"
+list = "No learn actions available"
+
+[placeholders."menus:keystone-main"]
+input = " Go"
+list = "No menu items available"
+
+[placeholders."menus:keystone-monitor-actions"]
+input = " Monitor actions"
+list = "No actions available"
+
+[placeholders."menus:keystone-monitor-values"]
+input = " Monitor values"
+list = "No values available"
+
+[placeholders."menus:keystone-monitors"]
+input = " Monitors"
+list = "No monitors found"
+
+[placeholders."menus:keystone-photos"]
+input = " Photos"
+list = "Search for a query to load photo results"
+
+[placeholders."menus:keystone-printer"]
+input = " Printers"
+list = "No printers found"
+
+[placeholders."menus:keystone-screenshot"]
+input = " Screenshot"
+list = "No screenshot actions available"
+
+[placeholders."menus:keystone-secret-actions"]
+input = " Secret actions"
+list = "No secret actions available"
+
+[placeholders."menus:keystone-secret-list"]
+input = " Secret"
+list = "No secrets found"
+
+[placeholders."menus:keystone-secrets"]
+input = " Secrets"
+list = "No secret categories found"
+
+[placeholders."menus:keystone-setup"]
+input = " Setup"
+list = "No setup actions available"
+
+[placeholders."menus:keystone-style"]
+input = " Style"
+list = "No style actions available"
+
+[placeholders."menus:keystone-system"]
+input = " System"
+list = "No system actions available"
+
+[placeholders."menus:keystone-theme"]
+input = " Theme"
+list = "No themes found"
+
+[placeholders."menus:keystone-toggle"]
+input = " Toggle"
+list = "No toggle actions available"
+
+[placeholders."menus:keystone-update"]
+input = " Update"
+list = "No update actions available"
+
+[placeholders."menus:keystone-wifi"]
+input = " Wi-Fi"
+list = "No Wi-Fi networks found"
+
+[providers]
+default = ["desktopapplications", "websearch"]
+max_results = 256
+
+[[providers.actions.fallback]]
+action = "menus:open"
+after = "Nothing"
+default = true
+label = "open"
+
+[[providers.actions.fallback]]
+action = "erase_history"
+after = "AsyncReload"
+bind = "ctrl h"
+label = "clear hist"
+
+[[providers.prefixes]]
+prefix = "/"
+provider = "providerlist"
+
+[[providers.prefixes]]
+prefix = "."
+provider = "files"
+
+[[providers.prefixes]]
+prefix = ":"
+provider = "symbols"
+
+[[providers.prefixes]]
+prefix = "="
+provider = "calc"
+
+[[providers.prefixes]]
+prefix = "@"
+provider = "websearch"
+
+[[providers.prefixes]]
+prefix = "$"
+provider = "clipboard"
