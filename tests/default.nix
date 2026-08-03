@@ -127,6 +127,65 @@ let
   homeStandalonePackageNames = map lib.getName homeStandalone.config.home.packages;
   homeStandaloneUnits = lib.attrNames homeStandalone.config.systemd.user.services;
 
+  # The EXACT set of keystone-owned commands the HM tree installs when both
+  # integration packages are null. Post-extraction every linked command is a
+  # single writeShellScriptBin named after the command, so lib.getName on a
+  # home.packages entry IS the command name.
+  #
+  # This list is a contract, not a snapshot: adding a command means adding a
+  # line here, and a command that starts requiring `ks` must MOVE to
+  # ksOnlyCommands below (SPEC.md 116-123 — ks-dependent surfaces are hidden
+  # per ENTRY, the command itself stays installed).
+  expectedStandaloneCommands = [
+    "keystone-accounts-menu"
+    # Ungated deliberately: its only external tool is agentctl, so the ks gate
+    # was hiding a surface that works perfectly well without `ks`.
+    "keystone-agent-menu"
+    "keystone-audio-menu"
+    "keystone-audio-switch"
+    "keystone-battery-monitor"
+    "keystone-context"
+    "keystone-desktop-config"
+    "keystone-detach"
+    "keystone-disk-monitor"
+    "keystone-fingerprint-menu"
+    "keystone-idle-toggle"
+    "keystone-launch-walker"
+    # Mod+Escape entrypoint backend. MUST be installed with ksPackage null —
+    # keystone-menu.sh execs it from every case arm, so gating the package
+    # kills the whole Mod+Escape surface instead of hiding one entry.
+    "keystone-main-menu"
+    "keystone-menu"
+    "keystone-menu-keybindings"
+    "keystone-monitor-menu"
+    "keystone-nightlight-toggle"
+    "keystone-notes-inbox"
+    "keystone-printer-menu"
+    "keystone-screenrecord"
+    "keystone-screenshot"
+    "keystone-setup-menu"
+    "keystone-startup-lock"
+    "keystone-theme-switch"
+    "keystone-wifi-menu"
+  ];
+
+  # Commands whose runtimeInputs contain cfg.integration.{ks,agenix}Package.
+  # They cannot be built at all when the package is null, so they MUST be
+  # absent here — their menu entries are hidden by env var instead.
+  ksOnlyCommands = [
+    "keystone-hardware-menu"
+    "keystone-package-menu"
+    "keystone-photos-menu"
+    "keystone-secrets-menu"
+  ];
+
+  actualStandaloneCommands = lib.sort lib.lessThan (
+    lib.unique (lib.filter (lib.hasPrefix "keystone-") homeStandalonePackageNames)
+  );
+  missingStandaloneCommands = lib.subtractLists actualStandaloneCommands expectedStandaloneCommands;
+  unexpectedStandaloneCommands = lib.subtractLists expectedStandaloneCommands actualStandaloneCommands;
+  leakedKsCommands = lib.filter (n: lib.elem n actualStandaloneCommands) ksOnlyCommands;
+
   # Full-surface HM eval for the stow-collision check: every option that can
   # contribute files is switched on (integration packages are stand-ins just
   # to un-gate the ks/agenix-dependent scripts and menus).
@@ -285,17 +344,52 @@ in
   );
   eval-niri = mkStubWarningGate "eval-niri" evalNiri (mkDisplayManagerXorCheck "eval-niri" evalNiri);
 
+  # Null-tolerance contract. With integration.ksPackage and
+  # integration.agenixPackage null (vanilla nixpkgs, no keystone overlay) the
+  # installed command set must match expectedStandaloneCommands EXACTLY.
+  # Failing only on absence would let a ks-gated command silently disappear;
+  # failing only on presence would let an unbuildable one silently appear.
   home-standalone =
     pkgs.runCommand "home-standalone"
       {
         packageNames = lib.concatStringsSep "\n" homeStandalonePackageNames;
         unitNames = lib.concatStringsSep "\n" homeStandaloneUnits;
+        actual = lib.concatStringsSep " " actualStandaloneCommands;
+        missing = lib.concatStringsSep " " missingStandaloneCommands;
+        unexpected = lib.concatStringsSep " " unexpectedStandaloneCommands;
+        leaked = lib.concatStringsSep " " leakedKsCommands;
       }
       ''
         echo "home.packages (vanilla nixpkgs, no keystone overlay):"
         echo "$packageNames"
         echo "systemd user services:"
         echo "$unitNames"
+        echo "keystone commands installed: $actual"
+
+        errors=0
+
+        if [ -n "$missing" ]; then
+          echo "FAIL(home-standalone): commands MISSING with ksPackage/agenixPackage null: $missing" >&2
+          echo "  A command that stops being installed when ks is null takes its whole Walker surface with it." >&2
+          errors=$((errors + 1))
+        fi
+
+        if [ -n "$unexpected" ]; then
+          echo "FAIL(home-standalone): UNEXPECTED commands installed: $unexpected" >&2
+          echo "  Add them to expectedStandaloneCommands (or to ksOnlyCommands if they need ks/agenix)." >&2
+          errors=$((errors + 1))
+        fi
+
+        if [ -n "$leaked" ]; then
+          echo "FAIL(home-standalone): ks/agenix-only commands installed with a null package: $leaked" >&2
+          errors=$((errors + 1))
+        fi
+
+        if [ "$errors" -gt 0 ]; then
+          exit 1
+        fi
+
+        echo "PASS(home-standalone): installed command set matches the null-integration contract"
         touch "$out"
       '';
 
@@ -320,6 +414,15 @@ in
 
   desktop-walker-surfaces = import ./module/desktop-walker-surfaces.nix { inherit pkgs; };
   desktop-health-monitor = import ./module/desktop-health-monitor.nix { inherit pkgs; };
+  desktop-main-menu-entries = import ./module/desktop-main-menu-entries.nix {
+    inherit
+      pkgs
+      lib
+      self
+      home-manager
+      ;
+  };
+  desktop-setup-menu-entries = import ./module/desktop-setup-menu-entries.nix { inherit pkgs lib; };
   desktop-fprintd = import ./module/desktop-fprintd.nix {
     inherit
       pkgs
