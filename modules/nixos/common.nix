@@ -27,8 +27,22 @@ in
       });
     '';
 
-    # Flatpak support (declarative via nix-flatpak)
-    services.flatpak.enable = mkDefault true;
+    # Flatpak support (declarative via nix-flatpak). Enabled only where a host
+    # actually declares flatpaks: nix-flatpak's installer unit fetches from the
+    # network on every boot, so on a host with an empty package list it is pure
+    # cost, and on a host with no egress at first boot it fails and leaves the
+    # system degraded.
+    services.flatpak.enable = mkDefault (config.services.flatpak.packages != [ ]);
+
+    # That installer reaches flathub but ships ordered only after
+    # multi-user.target, with Restart=on-failure and RestartSec=60s. It races
+    # DHCP on a cold boot and then flaps between failed and activating --
+    # observed failing in one disko-VM run and absent from the next. Wait for
+    # routable connectivity instead of retrying into a dead network.
+    systemd.services.flatpak-managed-install = mkIf config.services.flatpak.enable {
+      wants = [ "network-online.target" ];
+      after = [ "network-online.target" ];
+    };
 
     # Mesa and GPU drivers for Wayland compositors (Hyprland requires DRM/KMS).
     # Enables virtio-gpu support in VMs and hardware GPU on bare metal.
