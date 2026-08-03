@@ -646,8 +646,7 @@ in
             # Dependencies that should be available
             pkgs.gpu-screen-recorder
             pkgs.libxkbcommon # for xkbcli in keybindings menu
-          ]
-          ++ optionals (cfg.integration.ksPackage != null) [ keystonePhotosMenu ];
+          ];
 
           # Periodically check battery level and send a notification when low
           systemd.user.services.keystone-battery-monitor = {

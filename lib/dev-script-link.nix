@@ -125,29 +125,37 @@ in
       );
       candidateScriptArray = lib.concatStringsSep " " (map lib.escapeShellArg candidateScripts);
       runtimePath = lib.makeBinPath runtimeInputs;
-      commandWrapper = pkgs.writeShellScript "hm_${commandName}.sh" ''
+      # One wrapper for both modes, mirroring mkSystemScriptPackage below:
+      # runtimeInputs and extraEnvSetup ALWAYS apply, and the live-checkout exec
+      # loop is emitted only in development mode. Previously the wrapper was
+      # installed only when a checkout was present, so on every production host
+      # the bare package shipped with no PATH and no environment — silently
+      # disabling capability flags such as KEYSTONE_MENU_SHOW_* and dropping
+      # every declared runtimeInput.
+      #
+      # `lib.optionalString` also stops emitting `for live_script in ; do`,
+      # which is a shell syntax error, when no checkout is registered.
+      commandWrapper = pkgs.writeShellScriptBin commandName ''
         export PATH="${runtimePath}:$PATH"
         ${extraEnvSetup}
-        for live_script in ${candidateScriptArray}; do
-          if [ -f "$live_script" ]; then
-            exec ${pkgs.bash}/bin/bash "$live_script" "$@"
-          fi
-        done
+        ${lib.optionalString (repoCheckout != null) ''
+          for live_script in ${candidateScriptArray}; do
+            if [ -f "$live_script" ]; then
+              exec ${pkgs.bash}/bin/bash "$live_script" "$@"
+            fi
+          done
+        ''}
 
         exec "${package}/bin/${commandName}" "$@"
       '';
     in
-    lib.mkMerge [
-      (lib.mkIf (repoCheckout == null) {
-        home.packages = [ package ];
-      })
-      (lib.mkIf (repoCheckout != null) {
-        home.file.".local/bin/${commandName}" = {
-          source = commandWrapper;
-          executable = true;
-        };
-      })
-    ];
+    {
+      # home.packages in both modes, so the command resolves through the
+      # profile — the first branch every keystone_cmd lookup tries. The old dev
+      # branch wrote ~/.local/bin/<name>, which only ever matched the scripts'
+      # second-choice fallback.
+      home.packages = [ commandWrapper ];
+    };
 
   # NixOS system-level counterpart to mkHomeScriptCommand.
   # Returns a derivation suitable for environment.systemPackages that execs the
