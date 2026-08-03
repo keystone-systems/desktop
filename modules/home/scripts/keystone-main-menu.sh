@@ -66,12 +66,22 @@ main_json() {
   # ISSUE-REQ-1 (#390): Photos/Agents are gated by capability env vars
   # wired from the desktop home-manager module. Default to hidden when unset so
   # the surface never leaks in stale builds or ad-hoc invocations.
+  #
+  # SPEC.md "Menu System": Update and Install are the only entries that need the
+  # keystone `ks` CLI (Update -> `ks menu update`, Install -> keystone-package-
+  # menu -> `ks update`). They use the SAME env-var gate, so the rest of this
+  # menu keeps working when keystone.desktop.integration.ksPackage is null.
+  # Never gate this whole script off instead: it is the only Mod+Escape backend.
   local show_photos="${KEYSTONE_MENU_SHOW_PHOTOS:-false}"
   local show_agents="${KEYSTONE_MENU_SHOW_AGENTS:-false}"
+  local show_update="${KEYSTONE_MENU_SHOW_UPDATE:-false}"
+  local show_install="${KEYSTONE_MENU_SHOW_INSTALL:-false}"
 
   jq -n \
     --arg show_photos "$show_photos" \
-    --arg show_agents "$show_agents" '
+    --arg show_agents "$show_agents" \
+    --arg show_update "$show_update" \
+    --arg show_install "$show_install" '
     [
       {
         Text: "Apps",
@@ -127,25 +137,25 @@ main_json() {
         Icon: "preferences-system-symbolic",
         SubMenu: "keystone-setup"
       },
-      {
+      (if $show_install == "true" then {
         Text: "Install",
         Subtext: "Search and install packages from the current system flake",
         Value: "install",
         Icon: "list-add-symbolic",
         SubMenu: "keystone-install"
-      },
+      } else empty end),
       {
         Text: "Remove",
         Subtext: "Use Nix instead",
         Value: "blocked\tRemove\tUse Nix to remove software.",
         Icon: "list-remove-symbolic"
       },
-      {
+      (if $show_update == "true" then {
         Text: "Update",
         Subtext: "Update this host (silent, polkit-approved)",
         Value: "run-update",
         Icon: "software-update-available-symbolic"
-      },
+      } else empty end),
       {
         Text: "System",
         Subtext: "Lock, suspend, restart, and shutdown",
@@ -430,6 +440,15 @@ dispatch() {
       # success and journaled under tag `ks-update` on failure. Any
       # change to the launch contract belongs in
       # update_menu.rs::dispatch, not duplicated here.
+      #
+      # main_json hides this entry when KEYSTONE_MENU_SHOW_UPDATE is not "true",
+      # but `dispatch run-update` is a public argv surface and Walker/Elephant
+      # can replay a cached Value after a rebuild. Under `set -euo pipefail` a
+      # missing `ks` would fail silently, so report it.
+      if ! command -v ks >/dev/null 2>&1; then
+        notify "Update unavailable" "This host has no keystone ks CLI."
+        exit 0
+      fi
       ks menu update dispatch run-update
       ;;
     screenshot-smart)

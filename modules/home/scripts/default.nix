@@ -341,11 +341,20 @@ let
     builtins.readFile ./keystone-startup-lock.sh
   );
 
-  # Menus that shell out to the keystone `ks` CLI (or agenix) are mkIf-gated
-  # off when the corresponding integration package is null (standalone use
-  # without the keystone overlay), hiding their Walker surfaces. Gating is
-  # per-entry mkIf (NOT `++ optionals`): the mkMerge list structure must not
-  # depend on config or the module system hits infinite recursion.
+  # Two tiers of integration gating (SPEC.md "Menu System"):
+  #
+  # 1. A menu whose ENTIRE purpose is a keystone-owned tool (package/install,
+  #    hardware enrollment, photos search, agenix secrets) is mkIf-gated off
+  #    when its integration package is null. Its Walker component sets
+  #    HideFromProviderlist, so dropping the command hides the surface.
+  # 2. keystone-main-menu is NEVER gated. It is the only Mod+Escape backend and
+  #    almost all of it (Apps/Learn/Capture/Toggle/Style/Setup/System) is pure
+  #    walker/hyprland/systemd. The two entries that need `ks` (Update, Install)
+  #    are hidden per-entry through KEYSTONE_MENU_SHOW_* env vars below, the
+  #    same mechanism as Photos and Agents.
+  #
+  # Gating is per-entry mkIf (NOT `++ optionals`): the mkMerge list structure
+  # must not depend on config or the module system hits infinite recursion.
   linkedCommands = [
     (mkHomeScriptCommand {
       inherit config pkgs;
@@ -519,11 +528,14 @@ let
       relativePath = "modules/home/scripts/keystone-notes-inbox.sh";
       package = keystoneNotesInbox;
     })
-    (mkIf (cfg.integration.ksPackage != null) (mkHomeScriptCommand {
+    (mkHomeScriptCommand {
       inherit config pkgs;
       commandName = "keystone-main-menu";
       relativePath = "modules/home/scripts/keystone-main-menu.sh";
       package = keystoneMainMenu;
+      # `ks` is optional here: only the Update dispatch uses it, and that entry
+      # is hidden when the package is null. lib.optional keeps a null out of
+      # makeBinPath, which would otherwise abort evaluation.
       runtimeInputs = [
         pkgs.coreutils
         pkgs.findutils
@@ -531,20 +543,27 @@ let
         pkgs.ghostty
         pkgs.gnugrep
         pkgs.jq
-        cfg.integration.ksPackage
         pkgs.libnotify
         pkgs.systemd
         pkgs.walker
         pkgs.xdg-utils
-      ];
-      # Capability gating for ISSUE-REQ-1 (issue #390): the script's main_json
-      # emits Photos/Agents/Contexts entries only when the corresponding env var
-      # is "true". Values are evaluated at build time from the desktop config.
+      ]
+      ++ optional (cfg.integration.ksPackage != null) cfg.integration.ksPackage;
+      # Capability gating for ISSUE-REQ-1 (issue #390) and SPEC.md "Menu System":
+      # the script's main_json emits Photos/Agents/Update/Install entries only
+      # when the corresponding env var is "true". Values are evaluated at build
+      # time from the desktop config. Photos needs `ks photos`; Update needs
+      # `ks menu update`; Install opens keystone-package-menu, which is itself
+      # mkIf-gated on ksPackage.
       extraEnvSetup = ''
-        export KEYSTONE_MENU_SHOW_PHOTOS="${if cfg.photos.enable then "true" else "false"}"
+        export KEYSTONE_MENU_SHOW_PHOTOS="${
+          if cfg.photos.enable && cfg.integration.ksPackage != null then "true" else "false"
+        }"
         export KEYSTONE_MENU_SHOW_AGENTS="${if cfg.agents.enable then "true" else "false"}"
+        export KEYSTONE_MENU_SHOW_UPDATE="${if cfg.integration.ksPackage != null then "true" else "false"}"
+        export KEYSTONE_MENU_SHOW_INSTALL="${if cfg.integration.ksPackage != null then "true" else "false"}"
       '';
-    }))
+    })
     (mkIf (cfg.integration.ksPackage != null) (mkHomeScriptCommand {
       inherit config pkgs;
       commandName = "keystone-package-menu";
@@ -593,17 +612,19 @@ let
         pkgs.walker
       ];
     }))
-    (mkIf (cfg.integration.ksPackage != null) (mkHomeScriptCommand {
+    # keystone-agent-menu.sh never calls `ks` — every capability check in it is
+    # `command -v agentctl`, and it degrades to a blocked entry when agentctl is
+    # absent. Its Agents entry is gated by cfg.agents.enable, not by ksPackage.
+    (mkHomeScriptCommand {
       inherit config pkgs;
       commandName = "keystone-agent-menu";
       relativePath = "modules/home/scripts/keystone-agent-menu.sh";
       package = keystoneAgentMenu;
       runtimeInputs = [
-        cfg.integration.ksPackage
         pkgs.jq
         pkgs.walker
       ];
-    }))
+    })
     (mkIf (cfg.integration.agenixPackage != null) (mkHomeScriptCommand {
       inherit config pkgs;
       commandName = "keystone-secrets-menu";

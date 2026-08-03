@@ -111,7 +111,8 @@ Main Menu
 │   ├── Wifi      → Network configuration
 │   ├── Bluetooth → Bluetooth pairing
 │   └── Monitors  → Display configuration
-├── Install       → Package installation (via nix)
+├── Install       → Package installation (requires `ks` to apply; hidden when
+│                   the integration.ksPackage option is null)
 ├── Remove        → Package removal (via nix)
 ├── Update        → System update (requires `ks`; hidden when the
 │                   integration.ksPackage option is null)
