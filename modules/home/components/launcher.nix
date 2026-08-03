@@ -9,6 +9,48 @@ let
   cfg = config.keystone.desktop;
   devScripts = import ../../../lib/dev-script-link.nix { inherit lib; };
   inherit (devScripts) mkHomeRepoFiles;
+
+  # One name per Elephant menu provider. Every path is a mechanical function of
+  # the name, so this list is the only place a menu is registered.
+  menuNames = [
+    "keystone-main"
+    "keystone-learn"
+    "keystone-capture"
+    "keystone-screenshot"
+    "keystone-toggle"
+    "keystone-style"
+    "keystone-theme"
+    "keystone-system"
+    "keystone-install"
+    "keystone-update"
+    "keystone-photos"
+    "keystone-agents"
+    "keystone-agent-actions"
+    "keystone-setup"
+    "keystone-hardware"
+    "keystone-fingerprint"
+    "keystone-monitors"
+    "keystone-monitor-actions"
+    "keystone-monitor-values"
+    "keystone-printer"
+    "keystone-wifi"
+    "keystone-audio"
+    "keystone-audio-devices"
+    "keystone-accounts"
+    "keystone-secrets"
+    "keystone-secret-list"
+    "keystone-secret-actions"
+    "keystone-account-sections"
+    "keystone-account-mailbox"
+    "keystone-account-calendar"
+    "keystone-account-events"
+  ];
+
+  mkMenuFile = name: {
+    targetPath = ".config/elephant/menus/${name}.lua";
+    relativePath = "modules/home/components/${name}.lua";
+    sourcePath = ./. + "/${name}.lua";
+  };
 in
 {
   # walker is imported via flake.nix homeModules.default (hoisted to avoid
@@ -24,162 +66,8 @@ in
           relativePath = "modules/home/components/keystone-notes.desktop";
           sourcePath = ./keystone-notes.desktop;
         }
-        {
-          targetPath = ".config/elephant/menus/keystone-main.lua";
-          relativePath = "modules/home/components/keystone-main.lua";
-          sourcePath = ./keystone-main.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-learn.lua";
-          relativePath = "modules/home/components/keystone-learn.lua";
-          sourcePath = ./keystone-learn.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-capture.lua";
-          relativePath = "modules/home/components/keystone-capture.lua";
-          sourcePath = ./keystone-capture.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-screenshot.lua";
-          relativePath = "modules/home/components/keystone-screenshot.lua";
-          sourcePath = ./keystone-screenshot.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-toggle.lua";
-          relativePath = "modules/home/components/keystone-toggle.lua";
-          sourcePath = ./keystone-toggle.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-style.lua";
-          relativePath = "modules/home/components/keystone-style.lua";
-          sourcePath = ./keystone-style.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-theme.lua";
-          relativePath = "modules/home/components/keystone-theme.lua";
-          sourcePath = ./keystone-theme.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-system.lua";
-          relativePath = "modules/home/components/keystone-system.lua";
-          sourcePath = ./keystone-system.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-install.lua";
-          relativePath = "modules/home/components/keystone-install.lua";
-          sourcePath = ./keystone-install.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-update.lua";
-          relativePath = "modules/home/components/keystone-update.lua";
-          sourcePath = ./keystone-update.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-photos.lua";
-          relativePath = "modules/home/components/keystone-photos.lua";
-          sourcePath = ./keystone-photos.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-agents.lua";
-          relativePath = "modules/home/components/keystone-agents.lua";
-          sourcePath = ./keystone-agents.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-agent-actions.lua";
-          relativePath = "modules/home/components/keystone-agent-actions.lua";
-          sourcePath = ./keystone-agent-actions.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-setup.lua";
-          relativePath = "modules/home/components/keystone-setup.lua";
-          sourcePath = ./keystone-setup.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-hardware.lua";
-          relativePath = "modules/home/components/keystone-hardware.lua";
-          sourcePath = ./keystone-hardware.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-fingerprint.lua";
-          relativePath = "modules/home/components/keystone-fingerprint.lua";
-          sourcePath = ./keystone-fingerprint.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-monitors.lua";
-          relativePath = "modules/home/components/keystone-monitors.lua";
-          sourcePath = ./keystone-monitors.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-monitor-actions.lua";
-          relativePath = "modules/home/components/keystone-monitor-actions.lua";
-          sourcePath = ./keystone-monitor-actions.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-monitor-values.lua";
-          relativePath = "modules/home/components/keystone-monitor-values.lua";
-          sourcePath = ./keystone-monitor-values.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-printer.lua";
-          relativePath = "modules/home/components/keystone-printer.lua";
-          sourcePath = ./keystone-printer.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-wifi.lua";
-          relativePath = "modules/home/components/keystone-wifi.lua";
-          sourcePath = ./keystone-wifi.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-audio.lua";
-          relativePath = "modules/home/components/keystone-audio.lua";
-          sourcePath = ./keystone-audio.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-audio-devices.lua";
-          relativePath = "modules/home/components/keystone-audio-devices.lua";
-          sourcePath = ./keystone-audio-devices.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-accounts.lua";
-          relativePath = "modules/home/components/keystone-accounts.lua";
-          sourcePath = ./keystone-accounts.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-secrets.lua";
-          relativePath = "modules/home/components/keystone-secrets.lua";
-          sourcePath = ./keystone-secrets.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-secret-list.lua";
-          relativePath = "modules/home/components/keystone-secret-list.lua";
-          sourcePath = ./keystone-secret-list.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-secret-actions.lua";
-          relativePath = "modules/home/components/keystone-secret-actions.lua";
-          sourcePath = ./keystone-secret-actions.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-account-sections.lua";
-          relativePath = "modules/home/components/keystone-account-sections.lua";
-          sourcePath = ./keystone-account-sections.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-account-mailbox.lua";
-          relativePath = "modules/home/components/keystone-account-mailbox.lua";
-          sourcePath = ./keystone-account-mailbox.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-account-calendar.lua";
-          relativePath = "modules/home/components/keystone-account-calendar.lua";
-          sourcePath = ./keystone-account-calendar.lua;
-        }
-        {
-          targetPath = ".config/elephant/menus/keystone-account-events.lua";
-          relativePath = "modules/home/components/keystone-account-events.lua";
-          sourcePath = ./keystone-account-events.lua;
-        }
-      ];
+      ]
+      ++ map mkMenuFile menuNames;
     })
     {
       home.packages = [
@@ -225,207 +113,18 @@ in
       };
 
       # Walker launcher using the official home-manager module
-      programs.walker = {
-        enable = false;
-        runAsService = true;
-
-        config = {
-          force_keyboard_focus = true;
-          selection_wrap = true;
-          theme = "keystone";
-          resume_last_query = false;
-          actions_as_menu = true;
-          hide_action_hints = false;
-
-          placeholders = {
-            default = {
-              input = " Search...";
-              list = "No Results";
-            };
-            "menus:keystone-main" = {
-              input = " Go";
-              list = "No menu items available";
-            };
-            "menus:keystone-learn" = {
-              input = " Learn";
-              list = "No learn actions available";
-            };
-            "menus:keystone-capture" = {
-              input = " Capture";
-              list = "No capture actions available";
-            };
-            "menus:keystone-screenshot" = {
-              input = " Screenshot";
-              list = "No screenshot actions available";
-            };
-            "menus:keystone-toggle" = {
-              input = " Toggle";
-              list = "No toggle actions available";
-            };
-            "menus:keystone-style" = {
-              input = " Style";
-              list = "No style actions available";
-            };
-            "menus:keystone-theme" = {
-              input = " Theme";
-              list = "No themes found";
-            };
-            "menus:keystone-system" = {
-              input = " System";
-              list = "No system actions available";
-            };
-            "menus:keystone-install" = {
-              input = " Install";
-              list = "No install actions available";
-            };
-            "menus:keystone-update" = {
-              input = " Update";
-              list = "No update actions available";
-            };
-            "menus:keystone-photos" = {
-              input = " Photos";
-              list = "Search for a query to load photo results";
-            };
-            "menus:keystone-agents" = {
-              input = " Agents";
-              list = "No agents found";
-            };
-            "menus:keystone-agent-actions" = {
-              input = " Agent actions";
-              list = "No agent actions available";
-            };
-            "menus:keystone-monitors" = {
-              input = " Monitors";
-              list = "No monitors found";
-            };
-            "menus:keystone-setup" = {
-              input = " Setup";
-              list = "No setup actions available";
-            };
-            "menus:keystone-hardware" = {
-              input = " Hardware";
-              list = "No hardware actions available";
-            };
-            "menus:keystone-fingerprint" = {
-              input = " Fingerprint";
-              list = "No fingerprint actions available";
-            };
-            "menus:keystone-monitor-actions" = {
-              input = " Monitor actions";
-              list = "No actions available";
-            };
-            "menus:keystone-monitor-values" = {
-              input = " Monitor values";
-              list = "No values available";
-            };
-            "menus:keystone-printer" = {
-              input = " Printers";
-              list = "No printers found";
-            };
-            "menus:keystone-wifi" = {
-              input = " Wi-Fi";
-              list = "No Wi-Fi networks found";
-            };
-            "menus:keystone-audio" = {
-              input = " Audio";
-              list = "No audio actions available";
-            };
-            "menus:keystone-audio-devices" = {
-              input = " Audio devices";
-              list = "No audio devices found";
-            };
-            "menus:keystone-accounts" = {
-              input = " Accounts";
-              list = "No accounts found";
-            };
-            "menus:keystone-secrets" = {
-              input = " Secrets";
-              list = "No secret categories found";
-            };
-            "menus:keystone-secret-list" = {
-              input = " Secret";
-              list = "No secrets found";
-            };
-            "menus:keystone-secret-actions" = {
-              input = " Secret actions";
-              list = "No secret actions available";
-            };
-            "menus:keystone-account-sections" = {
-              input = " Account actions";
-              list = "No account actions available";
-            };
-            "menus:keystone-account-mailbox" = {
-              input = " Mail";
-              list = "No mail found";
-            };
-            "menus:keystone-account-calendar" = {
-              input = " Calendars";
-              list = "No calendars found";
-            };
-            "menus:keystone-account-events" = {
-              input = " Events";
-              list = "No events found";
-            };
-          };
-
-          keybinds = {
-            next = [ "Down" ];
-            previous = [ "Up" ];
-            quick_activate = [ ];
-            show_actions = [ ];
-          };
-
-          providers = {
-            max_results = 256;
-            default = [
-              "desktopapplications"
-              "websearch"
-            ];
-            actions = {
-              fallback = [
-                {
-                  action = "menus:open";
-                  label = "open";
-                  after = "Nothing";
-                  default = true;
-                }
-                {
-                  action = "erase_history";
-                  label = "clear hist";
-                  bind = "ctrl h";
-                  after = "AsyncReload";
-                }
-              ];
-            };
-            prefixes = [
-              {
-                prefix = "/";
-                provider = "providerlist";
-              }
-              {
-                prefix = ".";
-                provider = "files";
-              }
-              {
-                prefix = ":";
-                provider = "symbols";
-              }
-              {
-                prefix = "=";
-                provider = "calc";
-              }
-              {
-                prefix = "@";
-                provider = "websearch";
-              }
-              {
-                prefix = "$";
-                provider = "clipboard";
-              }
-            ];
-          };
-        };
-      };
+      # Walker's editable configuration is owned by the Stow template at
+      # templates/walker/.config/walker/config.toml, so the upstream Walker
+      # home-manager module stays disabled. Its whole `config` section sits
+      # under `mkIf cfg.enable`, which means every option set here rendered
+      # nothing: ~200 lines of placeholders and keybinds that never reached
+      # disk. Enabling it would also emit xdg.configFile."walker/config.toml"
+      # and collide with the Stow package (see the home-stow-collision check).
+      #
+      # `config.programs.walker.package`, used above for home.packages and the
+      # walker.service ExecStart, is an option default and resolves regardless
+      # of `enable`.
+      programs.walker.enable = false;
     }
   ]);
 }
