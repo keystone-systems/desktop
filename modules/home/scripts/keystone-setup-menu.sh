@@ -7,45 +7,70 @@ notify() {
   notify-send "$@"
 }
 
-keystone_cmd() {
-  local command_name="$1"
+# Resolve a keystone command without forking. Sets REPLY to the path, or to
+# the empty string when the command is not installed. entries_json resolves
+# nine of these on every menu open, so a command substitution each would be
+# nine subshells on the menu-open latency path.
+IFS=: read -ra _path_dirs <<<"$PATH"
+keystone_lookup() {
+  local command_name="$1" dir
 
-  if command -v "$command_name" >/dev/null 2>&1; then
-    command -v "$command_name"
-    return 0
-  fi
+  for dir in "${_path_dirs[@]}"; do
+    if [[ -x "$dir/$command_name" ]]; then
+      REPLY="$dir/$command_name"
+      return 0
+    fi
+  done
 
   if [[ -x "$HOME/.local/bin/$command_name" ]]; then
-    printf "%s\n" "$HOME/.local/bin/$command_name"
+    REPLY="$HOME/.local/bin/$command_name"
     return 0
   fi
 
-  printf "Unable to locate %s\n" "$command_name" >&2
+  REPLY=""
+  return 1
+}
+
+# For commands this menu cannot work without.
+keystone_cmd() {
+  keystone_lookup "$1" && return 0
+  printf "Unable to locate %s\n" "$1" >&2
   exit 1
 }
 
 entries_json() {
   local audio_menu monitor_menu hardware_menu fingerprint_menu accounts_menu printer_menu setup_menu secrets_menu wifi_menu
-  local current_flake="" show_secrets=false
-  audio_menu=$(keystone_cmd keystone-audio-menu)
-  monitor_menu=$(keystone_cmd keystone-monitor-menu)
-  hardware_menu=$(keystone_cmd keystone-hardware-menu)
-  fingerprint_menu=$(keystone_cmd keystone-fingerprint-menu)
-  accounts_menu=$(keystone_cmd keystone-accounts-menu)
-  printer_menu=$(keystone_cmd keystone-printer-menu)
-  setup_menu=$(keystone_cmd keystone-setup-menu)
-  secrets_menu=$(keystone_cmd keystone-secrets-menu)
-  wifi_menu=$(keystone_cmd keystone-wifi-menu)
+  local current_flake="" show_secrets=false show_hardware=false
+  keystone_cmd keystone-audio-menu; audio_menu="$REPLY"
+  keystone_cmd keystone-monitor-menu; monitor_menu="$REPLY"
+  keystone_cmd keystone-fingerprint-menu; fingerprint_menu="$REPLY"
+  keystone_cmd keystone-accounts-menu; accounts_menu="$REPLY"
+  keystone_cmd keystone-printer-menu; printer_menu="$REPLY"
+  keystone_cmd keystone-setup-menu; setup_menu="$REPLY"
+  keystone_cmd keystone-wifi-menu; wifi_menu="$REPLY"
 
-  current_flake=""
-  local _pointer_file="${KEYSTONE_SYSTEM_FLAKE_POINTER_FILE:-/run/current-system/keystone-system-flake}"
-  if [[ -r "$_pointer_file" ]]; then
-    current_flake="$(tr -d '\n' < "$_pointer_file" 2>/dev/null || true)"
-  fi
-  if [[ -d "$HOME/.keystone/repos/ncrmro/agenix-secrets" ]]; then
-    show_secrets=true
-  elif [[ -n "$current_flake" && -d "$current_flake/agenix-secrets" ]]; then
-    show_secrets=true
+  # These two are built conditionally — hardware on
+  # keystone.desktop.integration.ksPackage, secrets on .agenixPackage, both
+  # of which are legitimately null (sops hosts, and standalone use without
+  # the keystone overlay). Resolving either fatally aborts entries_json under
+  # `set -e`, which empties the WHOLE menu: one absent optional entry takes
+  # audio, monitors, wifi and the rest with it. Look them up softly and drop
+  # only their own entry.
+  keystone_lookup keystone-hardware-menu && show_hardware=true
+  hardware_menu="$REPLY"
+  keystone_lookup keystone-secrets-menu && show_secrets=true
+  secrets_menu="$REPLY"
+
+  # The secrets entry additionally requires an agenix repo to point at.
+  if [[ "$show_secrets" == true ]]; then
+    local pointer_file="${KEYSTONE_SYSTEM_FLAKE_POINTER_FILE:-/run/current-system/keystone-system-flake}"
+    if [[ -r "$pointer_file" ]]; then
+      read -r current_flake <"$pointer_file" || true
+    fi
+    if [[ ! -d "$HOME/.keystone/repos/ncrmro/agenix-secrets" ]] &&
+      [[ -z "$current_flake" || ! -d "$current_flake/agenix-secrets" ]]; then
+      show_secrets=false
+    fi
   fi
 
   jq -n '
@@ -74,14 +99,16 @@ entries_json() {
         Preview: ($printer_menu + " summary"),
         PreviewType: "command"
       },
-      {
-        Text: "Hardware",
-        Subtext: "Secure Boot, TPM, and hardware-key disk unlock",
-        Value: "hardware",
-        SubMenu: "keystone-hardware",
-        Preview: ($hardware_menu + " summary"),
-        PreviewType: "command"
-      },
+      (if $show_hardware then
+        {
+          Text: "Hardware",
+          Subtext: "Secure Boot, TPM, and hardware-key disk unlock",
+          Value: "hardware",
+          SubMenu: "keystone-hardware",
+          Preview: ($hardware_menu + " summary"),
+          PreviewType: "command"
+        }
+      else empty end),
       {
         Text: "Fingerprint",
         Subtext: "Enroll, verify, and delete fingerprints",
@@ -134,7 +161,8 @@ entries_json() {
     --arg setup_menu "$setup_menu" \
     --arg secrets_menu "$secrets_menu" \
     --arg wifi_menu "$wifi_menu" \
-    --argjson show_secrets "$show_secrets"
+    --argjson show_secrets "$show_secrets" \
+    --argjson show_hardware "$show_hardware"
 }
 
 preview_blocked() {

@@ -153,6 +153,14 @@ in
         name = if isLightTheme then "Adwaita" else "Adwaita-dark";
         package = pkgs.gnome-themes-extra;
       };
+
+      # `theme` must not apply to GTK 4: gnome-themes-extra ships no gtk-4.0
+      # directory, and Home Manager's legacy default (home.stateVersion <
+      # 26.05) would @import it from ~/.config/gtk-4.0/gtk.css. GTK drops the
+      # whole user stylesheet when an @import fails, so every GTK 4 surface
+      # renders unstyled — walker becomes a transparent layer. GTK 4 takes
+      # light/dark from the libadwaita color-scheme key set below.
+      gtk4.theme = lib.mkDefault null;
     };
 
     # Set GNOME/GTK color scheme via dconf
