@@ -164,6 +164,7 @@ let
     "keystone-screenrecord"
     "keystone-screenshot"
     "keystone-setup-menu"
+    "keystone-share-picker"
     "keystone-startup-lock"
     "keystone-theme-switch"
     "keystone-wifi-menu"

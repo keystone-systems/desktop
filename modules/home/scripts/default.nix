@@ -229,6 +229,11 @@ let
     builtins.readFile ./keystone-main-menu.sh
   );
 
+  # xdph screen-share picker: walker dmenu front end grouped by workspace
+  keystoneSharePicker = pkgs.writeShellScriptBin "keystone-share-picker" (
+    builtins.readFile ./keystone-share-picker.sh
+  );
+
   # Package install flow for the main menu
   keystonePackageMenu = pkgs.writeShellScriptBin "keystone-package-menu" (
     builtins.readFile ./keystone-package-menu.sh
@@ -390,6 +395,21 @@ let
         pkgs.libnotify
         pkgs.walker
         pkgs.xdg-utils
+      ];
+    })
+    (mkHomeScriptCommand {
+      inherit config pkgs;
+      commandName = "keystone-share-picker";
+      relativePath = "modules/home/scripts/keystone-share-picker.sh";
+      package = keystoneSharePicker;
+      runtimeInputs = [
+        pkgs.coreutils
+        pkgs.gawk
+        hyprlandPkg
+        pkgs.jq
+        pkgs.perl
+        pkgs.slurp
+        pkgs.walker
       ];
     })
     (mkHomeScriptCommand {
