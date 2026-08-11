@@ -128,6 +128,7 @@ in
       desktopInputs.hyprpaper.packages.${stdenv.hostPlatform.system}.hyprpaper
       keystone-desktop.hyprpolkitagent
       keystone-desktop.keystone-dpms-wake
+      keystone-desktop.keystone-lock
       waybar
       wofi
       mako

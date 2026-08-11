@@ -116,6 +116,7 @@
       packages.${system} = {
         inherit (overlaidPkgs.keystone-desktop)
           keystone-dpms-wake
+          keystone-lock
           write-polkit-theme
           hyprpolkitagent
           ;

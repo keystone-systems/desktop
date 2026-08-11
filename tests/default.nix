@@ -73,6 +73,7 @@ let
     "wl-clip-persist"
     "clipse"
     "keystone-dpms-wake"
+    "keystone-lock"
   ];
   systemPackageNames = map lib.getName evalHyprland.config.environment.systemPackages;
   missingBinaries = lib.filter (name: !(lib.elem name systemPackageNames)) templateBinaries;
@@ -151,6 +152,7 @@ let
     "keystone-fingerprint-menu"
     "keystone-idle-toggle"
     "keystone-launch-walker"
+    "keystone-lock"
     # Mod+Escape entrypoint backend. MUST be installed with ksPackage null —
     # keystone-menu.sh execs it from every case arm, so gating the package
     # kills the whole Mod+Escape surface instead of hiding one entry.
@@ -415,6 +417,7 @@ in
 
   desktop-walker-surfaces = import ./module/desktop-walker-surfaces.nix { inherit pkgs; };
   desktop-health-monitor = import ./module/desktop-health-monitor.nix { inherit pkgs; };
+  desktop-lock-recovery = import ./module/desktop-lock-recovery.nix { inherit pkgs; };
   desktop-main-menu-entries = import ./module/desktop-main-menu-entries.nix {
     inherit
       pkgs
