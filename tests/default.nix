@@ -52,8 +52,8 @@ let
   evalGnome = mkEval "gnome";
   evalNiri = mkEval "niri";
 
-  # Every binary the templates invoke by bare name (hyprland.conf binds and
-  # exec-once, hypridle.conf hooks, waybar on-click handlers). These MUST be
+  # Every binary the templates invoke by bare name (hyprland.lua binds,
+  # hypridle.conf hooks, and waybar on-click handlers). These MUST be
   # OS-level packages — the stowed configs run outside any HM wrapper PATH.
   # Guards the extraction risk of silently losing a binary that was HM-only
   # before (e.g. hyprpicker).

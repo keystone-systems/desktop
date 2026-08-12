@@ -185,11 +185,11 @@ local function load_active_theme()
   if not ok then print("Keystone theme failed: " .. tostring(runtime_error)) end
 end
 
-local function load_optional(module)
+local function load_overlay(module)
   local ok, module_error = pcall(require, module)
-  if not ok then print("Optional " .. module .. " load failed: " .. tostring(module_error)) end
+  if not ok then print(module .. " overlay load failed: " .. tostring(module_error)) end
 end
 
 load_active_theme()
-load_optional("user")
-load_optional("host")
+load_overlay("user")
+load_overlay("host")

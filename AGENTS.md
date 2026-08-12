@@ -2,7 +2,7 @@
 
 This repo is the extracted Keystone desktop: Nix owns **binaries, session
 wiring (greetd/uwsm/PAM/pipewire/portals), scripts/menus, and theming
-activation**; runtime configuration (hyprland.conf, waybar, wofi, walker
+activation**; runtime configuration (hyprland.lua, waybar, wofi, walker
 config, themes) is owned by the **user's dotfiles**, seeded once from
 `templates/` via `nix run .#seed-dotfiles`. Do not reintroduce Nix-side
 settings generation (`wayland.windowManager.hyprland.settings`,
@@ -113,10 +113,11 @@ trap). The name deliberately differs from keystone terminal's
 
 Stow-package layout, copied (never linked) into a user's dotfiles repo. Keep
 them user-agnostic: no absolute home paths, no personal identifiers, no
-hardware serials (`template-lint` enforces). `keystone-startup-lock` must stay
-the first user-visible `exec-once` (`template-startup-lock` enforces; see the
-autostart convention). Personal/host-specific matter belongs in the `user.conf`
-/ `host.conf` extension points, not in the shared files.
+hardware serials (`template-lint` enforces). `keystone-startup-lock.service`
+must remain a required gate after UWSM Wayland readiness and before
+`graphical-session.target` (`template-startup-lock` enforces this).
+Personal and host configuration belongs in the `user.lua` and `host.lua`
+extension modules.
 
 ## Theming
 
@@ -132,7 +133,7 @@ matte-black, nord, osaka-jade, ristretto, rose-pine, royal-green.
 
 ## Key bindings note
 
-Bindings live in the template `hyprland.conf`, not in Nix.
+Bindings live in the template `hyprland.lua`, not in Nix.
 **CRITICAL keyboard note**: `altwin:swap_alt_win` is enabled in the template
 input block — the physical Alt key (thumb-accessible) triggers `$mod`
 (`SUPER`) bindings, while physical Super + arrows send Alt + arrows for

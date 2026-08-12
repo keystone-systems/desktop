@@ -20,21 +20,21 @@ lifecycle. A required systemd user service MUST verify the lock before
 ```text
 ◇  next patch
 │
-○  docs(hyprland): document the Lua runtime contract
-○  test(hyprland): verify Lua fleet compositions
-○  refactor(hyprland)!: adopt Lua and UWSM lifecycle
-○  refactor(session)!: gate startup on a verified lock
-○  fix(startup-lock): report requested termination
-○  test(lock): cover session rejection and teardown order
-○  fix(lock): use ordered UWSM teardown
+●  docs(hyprland): document the Lua runtime contract  (this commit)
+●  test(hyprland): verify Lua fleet compositions  68dfd43
+●  refactor(hyprland)!: adopt Lua and UWSM lifecycle  1c4cfcb
+●  refactor(session)!: gate startup on a verified lock  4de6cd8
+●  fix(startup-lock): report requested termination  babf1cd
+●  test(lock): cover session rejection and teardown order  f05c6e5
+●  fix(lock): use ordered UWSM teardown  dbc0d94
 ●  fix(lock): close fail-closed recovery races  2fc6886
 ```
 
 The migration MUST preserve the existing binds, rules, monitors, theme
 selection, idle behavior, lid behavior, suspend behavior, and DPMS behavior.
 Hypridle, Hyprlock, Hyprpaper, Hyprsunset, and XDPH MUST retain their existing
-configuration formats. Tests MUST validate each theme and optional overlay
-composition with the pinned Hyprland 0.56 parser in an isolated environment.
+configuration formats. Tests MUST validate each theme with the user and host
+overlays. The test MUST use the pinned Hyprland 0.56 parser in isolation.
 
 ## Evidence
 
@@ -151,8 +151,9 @@ The command MUST:
    session-lock race.
 7. Log decisions under the `keystone-lock` journal tag.
 8. On ordinary failure, send a critical notification and return nonzero.
-9. With `--fail-closed`, attempt the same Hyprland, UWSM, and logind session
-   termination sequence used by `keystone-startup-lock`, then return nonzero.
+9. With `--fail-closed`, give `uwsm stop` one second to complete. Then request
+   `wayland-session-shutdown.target`. Finally, terminate only a validated
+   logind session and return nonzero.
 
 The command MUST NOT use `pidof`, `pgrep`, `pkill`, `flock`, or a PID-stability
 heuristic. A stale, inert process can remain until logout; it is not a source
@@ -164,7 +165,8 @@ not create separate OS and Home Manager implementations.
 
 ### Startup
 
-- Keep `keystone-startup-lock` as the first user-visible Hyprland `exec-once`.
+- Run `keystone-startup-lock` as a required systemd user service after UWSM
+  Wayland readiness and before `graphical-session.target`.
 - Keep its monitor-readiness gate and fail-closed termination sequence.
 - Remove the existing-PID and stable-PID success paths.
 - Call `keystone-lock` for each bounded startup attempt.
@@ -211,7 +213,7 @@ Static checks MUST prove:
 
 - no `pidof hyprlock` remains in desktop templates;
 - every template-invoked `keystone-lock` is installed;
-- startup lock remains the first user-visible `exec-once`;
+- the startup lock remains a required gate before graphical services;
 - startup has no PID-only or stable-PID success path;
 - the lid lock and System menu lock use `keystone-lock`;
 - active dotfiles match the template lock behavior.
