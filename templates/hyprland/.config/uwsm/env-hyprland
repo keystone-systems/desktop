@@ -1,0 +1,3 @@
+# Hyprland-specific variables. UWSM loads these for the compositor session.
+export HYPRCURSOR_SIZE=24
+export HYPRCURSOR_THEME=Adwaita
