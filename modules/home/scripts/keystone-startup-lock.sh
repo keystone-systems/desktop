@@ -23,7 +23,7 @@ session_lock_ready() {
 }
 
 # The final lock request runs --fail-closed so keystone-lock owns the single
-# session teardown sequence (hyprctl exit, uwsm stop, logind session kill).
+# session teardown sequence (UWSM stop, then a validated logind session kill).
 # A second copy here is how the two paths drift apart.
 final_attempt() {
   log info "requesting the final startup lock (fail closed)"
@@ -33,7 +33,7 @@ final_attempt() {
     exit 0
   fi
 
-  log err "hyprlock produced no observable lock state; the desktop session was terminated"
+  log err "hyprlock produced no observable lock state; desktop session termination was requested"
   exit 1
 }
 

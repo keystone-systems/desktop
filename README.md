@@ -7,7 +7,7 @@ templates. Extracted from [ks.systems/os](https://git.ncrmro.com/ks.systems/os)
 
 **Division of labor**: Nix owns binaries, session wiring
 (greetd/uwsm/PAM/pipewire/portals), scripts/menus, and the templates
-themselves. Runtime configuration — `hyprland.conf`, waybar, wofi, walker
+themselves. Runtime configuration — `hyprland.lua`, waybar, wofi, walker
 config, themes — lives in **your dotfiles repo**, seeded once from
 `templates/` and yours thereafter. Nix never generates or overwrites your
 editable config.
@@ -79,30 +79,44 @@ After seeding, the files are yours — edit them freely, commit them to your
 dotfiles repo, and never re-seed unless you want upstream's latest starter
 state.
 
-### The user.conf / host.conf contract
+### The Lua runtime contract
 
-The seeded `hyprland.conf` ends with:
+Hyprland 0.56 loads `~/.config/hypr/hyprland.lua`. The main module applies the
+base settings first. It then loads the active theme with an absolute
+`loadfile` plus `pcall` and loads the seeded user and host overlays with
+`pcall(require, ...)`:
 
-```
-source = ~/.config/themes/current/hyprland.conf   # active theme
-source = ~/.config/hypr/user.conf                 # you: identity (binds, window rules)
-source = ~/.config/hypr/host.conf                 # this machine: monitors, audio, printer
+```lua
+local chunk = loadfile(os.getenv("HOME") .. "/.config/themes/current/hyprland.lua")
+if chunk then pcall(chunk) end
+pcall(require, "user") -- identity and personal rules
+pcall(require, "host") -- monitors and host setup
 ```
 
 Edit these two files first:
 
-- **`user.conf`** — personal binds, window rules, startup dispatches. Same on
+- **`user.lua`** — personal binds, window rules, and compositor-local startup actions. Same on
   every machine.
-- **`host.conf`** — monitor layout (`monitor=desc:...` lines), default audio
+- **`host.lua`** — monitor layout (`hl.monitor({...})` calls), default audio
   sink/source, default printer. One per machine — keep a
   `hyprland-<hostname>` stow package per host and stow the right one.
 
-Both are sourced last, so they can override anything in the shared config.
-One rule is non-negotiable: `keystone-startup-lock` must remain the first
-user-visible `exec-once` in `hyprland.conf` — it is the fail-closed startup
-lock (see `conventions/os.hyprland-autostart.md`). The desktop module puts
-every binary the templates invoke on the system PATH, so the seeded configs
-work without any per-user package management.
+Both modules load last, so they can override the base and theme settings. A
+module error remains visible in Hyprland's configuration diagnostics.
+
+UWSM reads `.config/uwsm/env` for the common session environment and
+`.config/uwsm/env-hyprland` for `HYPR*` variables. Graphical application binds
+use `uwsm app --`. Home Manager owns persistent background processes as
+services that require and start after `graphical-session.target`.
+
+`hl.on("hyprland.start", ...)` MAY perform compositor-local dispatch or
+configuration work. It MUST NOT launch GUI applications or long-lived
+processes before the lock gate.
+
+The required `keystone-startup-lock.service` starts after
+`wayland-session-waitenv.service` and before `graphical-session.target`. The
+graphical services cannot start until Hyprland exposes an observable session
+lock. See `conventions/os.hyprland-autostart.md`.
 
 ## Pinning / overriding the desktop version
 

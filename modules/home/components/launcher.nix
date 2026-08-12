@@ -88,11 +88,21 @@ in
             "elephant.service"
           ];
           Requires = [ "elephant.service" ];
+          Requisite = [ "graphical-session.target" ];
           PartOf = [ "graphical-session.target" ];
         };
         Service = {
           ExecStart = "${lib.getExe config.programs.walker.package} --gapplication-service";
           Restart = "on-failure";
+        };
+        Install.WantedBy = [ "graphical-session.target" ];
+      };
+
+      systemd.user.services.elephant = {
+        Unit = {
+          After = [ "graphical-session.target" ];
+          PartOf = [ "graphical-session.target" ];
+          Requisite = [ "graphical-session.target" ];
         };
         Install.WantedBy = [ "graphical-session.target" ];
       };

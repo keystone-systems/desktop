@@ -11,6 +11,7 @@
   self,
   nixpkgs,
   home-manager,
+  hyprland,
   system,
 }:
 let
@@ -51,8 +52,8 @@ let
   evalGnome = mkEval "gnome";
   evalNiri = mkEval "niri";
 
-  # Every binary the templates invoke by bare name (hyprland.conf binds and
-  # exec-once, hypridle.conf hooks, waybar on-click handlers). These MUST be
+  # Every binary the templates invoke by bare name (hyprland.lua binds,
+  # hypridle.conf hooks, and waybar on-click handlers). These MUST be
   # OS-level packages — the stowed configs run outside any HM wrapper PATH.
   # Guards the extraction risk of silently losing a binary that was HM-only
   # before (e.g. hyprpicker).
@@ -127,6 +128,51 @@ let
   };
   homeStandalonePackageNames = map lib.getName homeStandalone.config.home.packages;
   homeStandaloneUnits = lib.attrNames homeStandalone.config.systemd.user.services;
+  startupLockUnit = homeStandalone.config.systemd.user.services.keystone-startup-lock;
+  persistentGraphicalServices = [
+    "hypridle"
+    "hyprpaper"
+    "hyprsunset"
+    "hyprpolkitagent"
+    "mako"
+    "swayosd"
+    "waybar"
+    "wl-clip-persist"
+    "clipse-listen"
+    "walker"
+    "elephant"
+  ];
+  missingGraphicalServices = lib.filter (
+    name: !(builtins.hasAttr name homeStandalone.config.systemd.user.services)
+  ) persistentGraphicalServices;
+  misorderedGraphicalServices = lib.filter (
+    name:
+    if builtins.hasAttr name homeStandalone.config.systemd.user.services then
+      let
+        unit = homeStandalone.config.systemd.user.services.${name};
+      in
+      !(lib.elem "graphical-session.target" unit.Unit.After)
+      || !(lib.elem "graphical-session.target" unit.Unit.PartOf)
+      || !(lib.elem "graphical-session.target" unit.Unit.Requisite)
+      || !(lib.elem "graphical-session.target" unit.Install.WantedBy)
+    else
+      false
+  ) persistentGraphicalServices;
+  missingGraphicalServiceExecStarts = lib.filter (
+    name:
+    if builtins.hasAttr name homeStandalone.config.systemd.user.services then
+      let
+        execStart = homeStandalone.config.systemd.user.services.${name}.Service.ExecStart or null;
+      in
+      if builtins.isString execStart then
+        execStart == ""
+      else if builtins.isList execStart then
+        execStart == [ ] || lib.any (entry: entry == "") execStart
+      else
+        true
+    else
+      false
+  ) persistentGraphicalServices;
 
   # The EXACT set of keystone-owned commands the HM tree installs when both
   # integration packages are null. Post-extraction every linked command is a
@@ -220,6 +266,28 @@ let
       }
     ];
   };
+  configuredDefaultServices = {
+    audio = homeFull.config.systemd.user.services.keystone-audio-defaults;
+    printer = homeFull.config.systemd.user.services.keystone-printer-default;
+  };
+  renderServiceValue = value: if builtins.isList value then lib.concatStringsSep " " value else value;
+  configuredDefaultServiceErrors = lib.filter (error: error != null) (
+    lib.mapAttrsToList (
+      name: unit:
+      if
+        lib.elem "graphical-session.target" unit.Unit.After
+        && lib.elem "graphical-session.target" unit.Unit.PartOf
+        && lib.elem "graphical-session.target" unit.Unit.Requisite
+        && lib.elem "graphical-session.target" unit.Install.WantedBy
+        && unit.Service.Type == "oneshot"
+        && unit.Service.RemainAfterExit
+        && lib.hasSuffix " apply-config-defaults" (renderServiceValue unit.Service.ExecStart)
+      then
+        null
+      else
+        name
+    ) configuredDefaultServices
+  );
 
   # Directories owned by the user's stowed dotfiles. Nix (home.file /
   # xdg.configFile) must never write under them — a managed entry there
@@ -264,24 +332,86 @@ in
         touch "$out"
       '';
 
-  # Ports the os.hyprland-autostart fail-closed convention to the template:
-  # the first user-visible exec-once (i.e. ignoring environment plumbing)
-  # MUST be keystone-startup-lock, or a reboot lands in an unlocked session.
+  # The startup lock is a required transaction gate after UWSM has published
+  # WAYLAND_DISPLAY and before any graphical-session service can start.
   template-startup-lock =
     pkgs.runCommand "template-startup-lock"
       {
-        nativeBuildInputs = [ pkgs.gnugrep ];
-        conf = "${templates}/hyprland/.config/hypr/hyprland.conf";
+        after = lib.concatStringsSep " " startupLockUnit.Unit.After;
+        before = lib.concatStringsSep " " startupLockUnit.Unit.Before;
+        requires = lib.concatStringsSep " " startupLockUnit.Unit.Requires;
+        requiredBy = lib.concatStringsSep " " startupLockUnit.Install.RequiredBy;
+        onFailure = lib.concatStringsSep " " startupLockUnit.Unit.OnFailure;
+        onFailureJobMode = startupLockUnit.Unit.OnFailureJobMode;
+        execStart = startupLockUnit.Service.ExecStart;
       }
       ''
-        first="$(grep -E '^exec-once=' "$conf" \
-          | grep -vE 'systemctl --user import-environment|dbus-update-activation-environment' \
-          | head -n1)"
-        if [ "$first" != "exec-once=keystone-startup-lock" ]; then
-          echo "FAIL: first user-visible exec-once must be keystone-startup-lock; got: ''${first:-<none>}" >&2
+        test "$after" = wayland-session-waitenv.service
+        test "$requires" = wayland-session-waitenv.service
+        test "$before" = graphical-session.target
+        test "$requiredBy" = graphical-session.target
+        test "$onFailure" = wayland-session-shutdown.target
+        test "$onFailureJobMode" = replace-irreversibly
+        case "$execStart" in
+          */bin/keystone-startup-lock) ;;
+          *) echo "FAIL: unexpected startup lock command: $execStart" >&2; exit 1 ;;
+        esac
+        echo "PASS: startup lock gates graphical-session.target after UWSM readiness"
+        touch "$out"
+      '';
+
+  desktop-session-lifecycle =
+    pkgs.runCommand "desktop-session-lifecycle"
+      {
+        missing = lib.concatStringsSep " " missingGraphicalServices;
+        missingExecStarts = lib.concatStringsSep " " missingGraphicalServiceExecStarts;
+        misordered = lib.concatStringsSep " " misorderedGraphicalServices;
+        hyprsunsetCondition = homeStandalone.config.systemd.user.services.hyprsunset.Service.ExecCondition;
+        configuredDefaultServiceErrors = lib.concatStringsSep " " configuredDefaultServiceErrors;
+        standaloneHasAudioDefaults = lib.boolToString (
+          builtins.hasAttr "keystone-audio-defaults" homeStandalone.config.systemd.user.services
+        );
+        standaloneHasPrinterDefault = lib.boolToString (
+          builtins.hasAttr "keystone-printer-default" homeStandalone.config.systemd.user.services
+        );
+        audioDefaultsExecStart = renderServiceValue configuredDefaultServices.audio.Service.ExecStart;
+        printerDefaultExecStart = renderServiceValue configuredDefaultServices.printer.Service.ExecStart;
+        audioDefaultsEnvironment = lib.concatStringsSep " " configuredDefaultServices.audio.Service.Environment;
+        printerDefaultEnvironment = lib.concatStringsSep " " configuredDefaultServices.printer.Service.Environment;
+      }
+      ''
+        if [ -n "$missing" ]; then
+          echo "FAIL: persistent graphical services missing: $missing" >&2
           exit 1
         fi
-        echo "PASS: keystone-startup-lock is the first user-visible exec-once"
+        if [ -n "$misordered" ]; then
+          echo "FAIL: graphical services do not follow the lock gate: $misordered" >&2
+          exit 1
+        fi
+        if [ -n "$missingExecStarts" ]; then
+          echo "FAIL: persistent graphical services have no effective ExecStart: $missingExecStarts" >&2
+          exit 1
+        fi
+        if [ -n "$configuredDefaultServiceErrors" ]; then
+          echo "FAIL: configured default services violate the graphical-session contract: $configuredDefaultServiceErrors" >&2
+          exit 1
+        fi
+        test "$standaloneHasAudioDefaults" = false
+        test "$standaloneHasPrinterDefault" = false
+        case "$audioDefaultsExecStart" in
+          */bin/keystone-audio-menu\ apply-config-defaults) ;;
+          *) echo "FAIL: unexpected audio defaults command: $audioDefaultsExecStart" >&2; exit 1 ;;
+        esac
+        case "$printerDefaultExecStart" in
+          */bin/keystone-printer-menu\ apply-config-defaults) ;;
+          *) echo "FAIL: unexpected printer default command: $printerDefaultExecStart" >&2; exit 1 ;;
+        esac
+        test "$audioDefaultsEnvironment" = "KEYSTONE_AUDIO_DEFAULT_SINK=test-sink KEYSTONE_AUDIO_DEFAULT_SOURCE=test-source"
+        test "$printerDefaultEnvironment" = "KEYSTONE_PRINTER_DEFAULT=test-printer"
+        case "$hyprsunsetCondition" in
+          *virtio*) ;;
+          *) echo "FAIL: hyprsunset lost its virtio exclusion" >&2; exit 1 ;;
+        esac
         touch "$out"
       '';
 
@@ -432,6 +562,9 @@ in
   desktop-walker-surfaces = import ./module/desktop-walker-surfaces.nix { inherit pkgs; };
   desktop-health-monitor = import ./module/desktop-health-monitor.nix { inherit pkgs; };
   desktop-lock-recovery = import ./module/desktop-lock-recovery.nix { inherit pkgs; };
+  desktop-hyprland-lua = import ./module/desktop-hyprland-lua.nix {
+    inherit pkgs hyprland system;
+  };
   desktop-main-menu-entries = import ./module/desktop-main-menu-entries.nix {
     inherit
       pkgs

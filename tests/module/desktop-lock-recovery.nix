@@ -14,7 +14,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     script="${../..}/modules/home/scripts/keystone-lock.sh"
     startup_script="${../..}/modules/home/scripts/keystone-startup-lock.sh"
     hypridle_conf="${../..}/templates/hyprland/.config/hypr/hypridle.conf"
-    hyprland_conf="${../..}/templates/hyprland/.config/hypr/hyprland.conf"
+    hyprland_conf="${../..}/templates/hyprland/.config/hypr/hyprland.lua"
     main_menu="${../..}/modules/home/scripts/keystone-main-menu.sh"
     test_root="$TMPDIR/lock-test"
     fake_bin="$test_root/bin"
@@ -38,7 +38,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     elif [[ "$1" == "show-session" ]]; then
       property="$4"
       if [[ "$property" == "User" ]]; then
-        printf '%s\n' "$FAKE_USER_ID"
+        printf '%s\n' "''${FAKE_SESSION_OWNER:-$FAKE_USER_ID}"
       elif [[ "$2" == "''${FAKE_DISPLAY_SESSION:-7}" ]]; then
         printf 'wayland\n'
       else
@@ -46,6 +46,9 @@ pkgs.runCommand "test-desktop-lock-recovery"
       fi
     elif [[ "$1" == "terminate-session" ]]; then
       printf 'loginctl %s\n' "$*" >> "$FAKE_TERMINATE_LOG"
+      if [[ "''${FAKE_LOGINCTL_FAIL:-false}" == "true" ]]; then
+        exit 1
+      fi
       if [[ "''${FAKE_LOGINCTL_KILL_CALLER:-false}" == "true" ]]; then
         kill -TERM "$PPID"
       fi
@@ -63,8 +66,6 @@ pkgs.runCommand "test-desktop-lock-recovery"
       [[ "$(cat "$FAKE_LOCK_STATE")" == "locked" ]] \
         && printf '{"locked":true}\n' \
         || printf '{"locked":false}\n'
-    elif [[ "''${1:-}" == "dispatch" && "''${2:-}" == "exit" ]]; then
-      printf 'hyprctl %s\n' "$*" >> "$FAKE_TERMINATE_LOG"
     fi
     EOF
 
@@ -96,9 +97,17 @@ pkgs.runCommand "test-desktop-lock-recovery"
     cat >/dev/null
     EOF
 
+    cat > "$fake_bin/systemctl" <<'EOF'
+    #!${pkgs.bash}/bin/bash
+    printf 'systemctl %s\n' "$*" >> "$FAKE_TERMINATE_LOG"
+    [[ "''${FAKE_SYSTEMCTL_FAIL:-false}" != "true" ]]
+    EOF
+
     cat > "$fake_bin/uwsm" <<'EOF'
     #!${pkgs.bash}/bin/bash
+    sleep "''${FAKE_UWSM_DELAY_SECONDS:-0}"
     printf 'uwsm %s\n' "$*" >> "$FAKE_TERMINATE_LOG"
+    [[ "''${FAKE_UWSM_FAIL:-false}" != "true" ]]
     EOF
 
     chmod +x "$fake_bin"/*
@@ -112,6 +121,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     export FAKE_USER_ID="$(id -u)"
     export KEYSTONE_LOCK_POLL_INTERVAL_SECONDS=0.05
     export KEYSTONE_LOCK_TIMEOUT_MILLISECONDS=1000
+    export KEYSTONE_LOCK_TEARDOWN_TIMEOUT_MILLISECONDS=250
     unset XDG_SESSION_ID
 
     fail() {
@@ -190,23 +200,84 @@ pkgs.runCommand "test-desktop-lock-recovery"
     fi
     unset FAKE_LOGINCTL_KILL_CALLER
     unset XDG_SESSION_ID
-    # The graceful requests run asynchronously and can finish after logind
-    # kills the helper. Wait briefly for both stubs to record their start.
-    for _ in {1..20}; do
-      grep -q '^uwsm stop$' "$terminate_log" \
-        && grep -q '^hyprctl dispatch exit$' "$terminate_log" \
-        && break
-      sleep 0.01
-    done
-    check "--fail-closed must exit hyprland" grep -q '^hyprctl dispatch exit$' "$terminate_log"
     check "--fail-closed must stop uwsm" grep -q '^uwsm stop$' "$terminate_log"
+    check "--fail-closed must request the UWSM shutdown target" \
+      grep -q '^systemctl --user start --no-block wayland-session-shutdown.target$' "$terminate_log"
     check "--fail-closed must terminate the logind session" \
       grep -q '^loginctl terminate-session 7$' "$terminate_log"
     check "a stale XDG session ID must fall back to the user's display session" \
       grep -q '^loginctl terminate-session 7$' "$terminate_log"
-    check "--fail-closed must request UWSM teardown" grep -q '^uwsm stop$' "$terminate_log"
-    check "--fail-closed must request compositor teardown" \
-      grep -q '^hyprctl dispatch exit$' "$terminate_log"
+    uwsm_line="$(grep -n '^uwsm stop$' "$terminate_log" | cut -d: -f1)"
+    shutdown_line="$(grep -n '^systemctl --user start --no-block wayland-session-shutdown.target$' "$terminate_log" | cut -d: -f1)"
+    loginctl_line="$(grep -n '^loginctl terminate-session 7$' "$terminate_log" | cut -d: -f1)"
+    [[ "$uwsm_line" -lt "$shutdown_line" && "$shutdown_line" -lt "$loginctl_line" ]] \
+      || fail "fail-closed teardown did not use UWSM, its shutdown target, then logind"
+
+    # UWSM may hang. The helper must still reach the logind fallback after its
+    # bounded grace period.
+    : > "$terminate_log"
+    export FAKE_UWSM_DELAY_SECONDS=0.2
+    export KEYSTONE_LOCK_TIMEOUT_MILLISECONDS=0
+    export KEYSTONE_LOCK_TEARDOWN_TIMEOUT_MILLISECONDS=25
+    started_milliseconds="$(date +%s%3N)"
+    if run_lock none --fail-closed; then
+      fail "bounded fail-closed lock failure returned success"
+    fi
+    elapsed_milliseconds=$(( $(date +%s%3N) - started_milliseconds ))
+    [[ "$elapsed_milliseconds" -lt 500 ]] \
+      || fail "UWSM teardown exceeded its bounded grace period"
+    check "bounded teardown must reach logind" \
+      grep -q '^loginctl terminate-session 7$' "$terminate_log"
+    check "bounded teardown must request the UWSM shutdown target" \
+      grep -q '^systemctl --user start --no-block wayland-session-shutdown.target$' "$terminate_log"
+    for _ in {1..30}; do
+      grep -q '^uwsm stop$' "$terminate_log" && break
+      sleep 0.01
+    done
+    check "the timed-out UWSM request must still have started" grep -q '^uwsm stop$' "$terminate_log"
+    loginctl_line="$(grep -n '^loginctl terminate-session 7$' "$terminate_log" | cut -d: -f1)"
+    shutdown_line="$(grep -n '^systemctl --user start --no-block wayland-session-shutdown.target$' "$terminate_log" | cut -d: -f1)"
+    uwsm_line="$(grep -n '^uwsm stop$' "$terminate_log" | cut -d: -f1)"
+    [[ "$shutdown_line" -lt "$loginctl_line" && "$loginctl_line" -lt "$uwsm_line" ]] \
+      || fail "the UWSM timeout did not precede native and logind fallbacks"
+    unset FAKE_UWSM_DELAY_SECONDS
+    export KEYSTONE_LOCK_TIMEOUT_MILLISECONDS=1000
+    export KEYSTONE_LOCK_TEARDOWN_TIMEOUT_MILLISECONDS=250
+
+    # A session that belongs to another user must never be terminated.
+    : > "$terminate_log"
+    export FAKE_SESSION_OWNER=$(( FAKE_USER_ID + 1 ))
+    export XDG_SESSION_ID=foreign
+    if run_lock none --fail-closed; then
+      fail "foreign-owner lock failure returned success"
+    fi
+    unset XDG_SESSION_ID FAKE_SESSION_OWNER
+    check "foreign-owner recovery must still ask UWSM to stop" grep -q '^uwsm stop$' "$terminate_log"
+    if grep -q '^loginctl terminate-session' "$terminate_log"; then
+      fail "foreign-owner recovery must not terminate a logind session"
+    fi
+
+    # Failed graceful and logind requests must retain the supported UWSM
+    # shutdown-target fallback and preserve the fail-closed ordering.
+    : > "$terminate_log"
+    export KEYSTONE_LOCK_TIMEOUT_MILLISECONDS=0
+    export FAKE_UWSM_FAIL=true
+    export FAKE_LOGINCTL_FAIL=true
+    if run_lock none --fail-closed; then
+      fail "failed teardown requests returned success"
+    fi
+    unset FAKE_UWSM_FAIL FAKE_LOGINCTL_FAIL
+    export KEYSTONE_LOCK_TIMEOUT_MILLISECONDS=1000
+    check "failed UWSM teardown must request uwsm stop" grep -q '^uwsm stop$' "$terminate_log"
+    check "failed UWSM teardown must request its shutdown target" \
+      grep -q '^systemctl --user start --no-block wayland-session-shutdown.target$' "$terminate_log"
+    check "failed UWSM teardown must reach logind" \
+      grep -q '^loginctl terminate-session 7$' "$terminate_log"
+    uwsm_line="$(grep -n '^uwsm stop$' "$terminate_log" | cut -d: -f1)"
+    shutdown_line="$(grep -n '^systemctl --user start --no-block wayland-session-shutdown.target$' "$terminate_log" | cut -d: -f1)"
+    loginctl_line="$(grep -n '^loginctl terminate-session 7$' "$terminate_log" | cut -d: -f1)"
+    [[ "$uwsm_line" -lt "$shutdown_line" && "$shutdown_line" -lt "$loginctl_line" ]] \
+      || fail "failed teardown requests ran out of order"
 
     # Static guards: keystone-lock owns lock truth and session termination.
     if grep -Eq '\b(pidof|pgrep|pkill|flock)\b' "$script"; then
@@ -217,6 +288,9 @@ pkgs.runCommand "test-desktop-lock-recovery"
     fi
     check "keystone-lock must query Hyprland's direct session-lock state" \
       grep -q 'hyprctl -j locked' "$script"
+    if grep -q 'hyprctl dispatch exit' "$script"; then
+      fail "UWSM sessions must not use compositor-native exit"
+    fi
     if grep -Eq '\b(pidof|pgrep|pkill)\b' "$startup_script"; then
       fail "startup lock must not accept PID existence or stability"
     fi
@@ -236,7 +310,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     check "the idle listener must lock through keystone-lock" \
       grep -q '^  on-timeout=keystone-lock$' "$hypridle_conf"
     check "the lid must lock before it suspends" \
-      grep -q 'switch:on:Lid Switch, exec, keystone-lock --fail-closed && systemctl suspend' "$hyprland_conf"
+      grep -q 'keystone-lock --fail-closed && systemctl suspend' "$hyprland_conf"
     check "a failed lid lock must block suspend" \
       grep -q 'failed lock requests session termination and deliberately blocks suspend' "$hyprland_conf"
     menu_arm system-lock | grep -q 'keystone_cmd keystone-lock' \

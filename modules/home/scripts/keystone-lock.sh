@@ -19,6 +19,7 @@ esac
 
 poll_interval_seconds="${KEYSTONE_LOCK_POLL_INTERVAL_SECONDS:-0.1}"
 timeout_milliseconds="${KEYSTONE_LOCK_TIMEOUT_MILLISECONDS:-3000}"
+teardown_timeout_milliseconds="${KEYSTONE_LOCK_TEARDOWN_TIMEOUT_MILLISECONDS:-1000}"
 
 log() {
   local priority="$1"
@@ -64,13 +65,35 @@ lock_ready() {
 
 terminate_session() {
   log err "Terminating the desktop session because the lock did not become ready."
-  # Start both graceful teardown requests without waiting. Either request can
-  # stop this helper with the desktop session. Ask logind in the foreground
-  # only after both requests have started because logind can kill the caller.
-  (uwsm stop >/dev/null 2>&1 || true) &
-  (hyprctl dispatch exit >/dev/null 2>&1 || true) &
+  # UWSM owns the compositor lifecycle. Give it a bounded opportunity to stop
+  # the session before logind kills this helper and all of its children.
+  uwsm stop >/dev/null 2>&1 &
+  uwsm_pid=$!
+  teardown_deadline_milliseconds=$(( $(date +%s%3N) + teardown_timeout_milliseconds ))
+
+  while kill -0 "$uwsm_pid" 2>/dev/null; do
+    if [[ "$(date +%s%3N)" -ge "$teardown_deadline_milliseconds" ]]; then
+      break
+    fi
+    sleep "$poll_interval_seconds"
+  done
+
+  if ! kill -0 "$uwsm_pid" 2>/dev/null; then
+    if ! wait "$uwsm_pid"; then
+      log warning "UWSM did not stop the desktop session cleanly."
+    fi
+  else
+    log warning "UWSM did not stop the desktop session before the teardown deadline."
+  fi
+
+  if ! systemctl --user start --no-block wayland-session-shutdown.target >/dev/null 2>&1; then
+    log err "Could not request the UWSM session shutdown target."
+  fi
+
   if [[ -n "$session" ]]; then
-    loginctl terminate-session "$session" >/dev/null 2>&1 || true
+    if ! loginctl terminate-session "$session" >/dev/null 2>&1; then
+      log err "Could not terminate the validated logind session ${session}."
+    fi
   fi
 }
 

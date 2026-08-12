@@ -11,6 +11,18 @@ let
   hyprpaperPkg = desktopInputs.hyprpaper.packages.${pkgs.stdenv.hostPlatform.system}.hyprpaper;
   keystoneLockPkg =
     desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.keystone-lock;
+  hyprpolkitagentPkg =
+    desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.hyprpolkitagent;
+  graphicalService = description: execStart: {
+    Unit = {
+      Description = description;
+      PartOf = [ "graphical-session.target" ];
+      After = [ "graphical-session.target" ];
+      Requisite = [ "graphical-session.target" ];
+    };
+    Service.ExecStart = execStart;
+    Install.WantedBy = [ "graphical-session.target" ];
+  };
 in
 {
   # Session wiring only. Hyprland/hypridle/hyprlock/hyprpaper/waybar settings
@@ -31,11 +43,73 @@ in
       };
     };
 
+    # This one-shot is a required transaction gate. UWSM first publishes and
+    # verifies WAYLAND_DISPLAY. The lock must then become observable before
+    # graphical-session.target can activate any user-visible service.
+    systemd.user.services.keystone-startup-lock = {
+      Unit = {
+        Description = "Verify the startup session lock";
+        Requires = [ "wayland-session-waitenv.service" ];
+        After = [ "wayland-session-waitenv.service" ];
+        Before = [ "graphical-session.target" ];
+        Conflicts = [ "wayland-session-shutdown.target" ];
+        OnFailure = [ "wayland-session-shutdown.target" ];
+        OnFailureJobMode = "replace-irreversibly";
+      };
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${config.home.profileDirectory}/bin/keystone-startup-lock";
+        RemainAfterExit = true;
+      };
+      Install.RequiredBy = [ "graphical-session.target" ];
+    };
+
+    systemd.user.services.keystone-audio-defaults =
+      mkIf (cfg.audio.defaults.sink != null || cfg.audio.defaults.source != null)
+        {
+          Unit = {
+            Description = "Apply Keystone audio defaults";
+            After = [ "graphical-session.target" ];
+            PartOf = [ "graphical-session.target" ];
+            Requisite = [ "graphical-session.target" ];
+          };
+          Service = {
+            Type = "oneshot";
+            Environment =
+              lib.optional (
+                cfg.audio.defaults.sink != null
+              ) "KEYSTONE_AUDIO_DEFAULT_SINK=${cfg.audio.defaults.sink}"
+              ++ lib.optional (
+                cfg.audio.defaults.source != null
+              ) "KEYSTONE_AUDIO_DEFAULT_SOURCE=${cfg.audio.defaults.source}";
+            ExecStart = "${config.home.profileDirectory}/bin/keystone-audio-menu apply-config-defaults";
+            RemainAfterExit = true;
+          };
+          Install.WantedBy = [ "graphical-session.target" ];
+        };
+
+    systemd.user.services.keystone-printer-default = mkIf (cfg.printer.default != null) {
+      Unit = {
+        Description = "Apply the Keystone printer default";
+        After = [ "graphical-session.target" ];
+        PartOf = [ "graphical-session.target" ];
+        Requisite = [ "graphical-session.target" ];
+      };
+      Service = {
+        Type = "oneshot";
+        Environment = [ "KEYSTONE_PRINTER_DEFAULT=${cfg.printer.default}" ];
+        ExecStart = "${config.home.profileDirectory}/bin/keystone-printer-menu apply-config-defaults";
+        RemainAfterExit = true;
+      };
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
+
     systemd.user.services.hypridle = {
       Unit = {
         Description = "Hyprland idle manager";
         PartOf = [ "graphical-session.target" ];
         After = [ "graphical-session.target" ];
+        Requisite = [ "graphical-session.target" ];
       };
       Service.ExecStart = "${pkgs.hypridle}/bin/hypridle";
       Install.WantedBy = [ "graphical-session.target" ];
@@ -46,16 +120,27 @@ in
         Description = "Hyprland wallpaper daemon";
         PartOf = [ "graphical-session.target" ];
         After = [ "graphical-session.target" ];
+        Requisite = [ "graphical-session.target" ];
       };
       Service.ExecStart = "${hyprpaperPkg}/bin/hyprpaper";
       Install.WantedBy = [ "graphical-session.target" ];
     };
+
+    systemd.user.services.hyprsunset =
+      lib.recursiveUpdate
+        (graphicalService "Hyprland blue-light filter" "${pkgs.hyprsunset}/bin/hyprsunset")
+        {
+          Service.ExecCondition = "${pkgs.bash}/bin/bash -c 'for card in /sys/class/drm/card*/device/driver; do readlink -f \"$card\" 2>/dev/null; done | grep -q virtio && exit 1 || exit 0'";
+        };
+
+    systemd.user.services.hyprpolkitagent = graphicalService "Hyprland polkit authentication agent" "${hyprpolkitagentPkg}/libexec/hyprpolkitagent";
 
     systemd.user.services.waybar = {
       Unit = {
         Description = "Waybar status bar";
         PartOf = [ "graphical-session.target" ];
         After = [ "graphical-session.target" ];
+        Requisite = [ "graphical-session.target" ];
       };
       Service = {
         ExecStart = "${pkgs.waybar}/bin/waybar";

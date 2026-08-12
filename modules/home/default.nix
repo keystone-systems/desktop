@@ -126,11 +126,10 @@ in
       description = "Show the Agents entry in the Mod+Escape Walker main menu.";
     };
 
-    # NOTE: no startupLockCommand option. The template hyprland.conf's
-    # exec-once calls keystone-startup-lock directly; autostart generation is
-    # gone, so an option here would be a silently-ignored knob on a
-    # security-critical (fail-closed lock) behavior. Users who want a
-    # different lock command edit their seeded hyprland.conf.
+    # NOTE: no startupLockCommand option. The required systemd user unit owns
+    # this security-critical fail-closed gate. A Home Manager option would let
+    # a consumer weaken the invariant that graphical-session.target starts
+    # only after an observable lock exists.
 
     integration = {
       ksPackage = mkOption {
