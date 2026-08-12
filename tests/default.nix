@@ -127,6 +127,7 @@ let
   };
   homeStandalonePackageNames = map lib.getName homeStandalone.config.home.packages;
   homeStandaloneUnits = lib.attrNames homeStandalone.config.systemd.user.services;
+  startupLockUnit = homeStandalone.config.systemd.user.services.keystone-startup-lock;
 
   # The EXACT set of keystone-owned commands the HM tree installs when both
   # integration packages are null. Post-extraction every linked command is a
@@ -264,24 +265,27 @@ in
         touch "$out"
       '';
 
-  # Ports the os.hyprland-autostart fail-closed convention to the template:
-  # the first user-visible exec-once (i.e. ignoring environment plumbing)
-  # MUST be keystone-startup-lock, or a reboot lands in an unlocked session.
+  # The startup lock is a required transaction gate after UWSM has published
+  # WAYLAND_DISPLAY and before any graphical-session service can start.
   template-startup-lock =
     pkgs.runCommand "template-startup-lock"
       {
-        nativeBuildInputs = [ pkgs.gnugrep ];
-        conf = "${templates}/hyprland/.config/hypr/hyprland.conf";
+        after = lib.concatStringsSep " " startupLockUnit.Unit.After;
+        before = lib.concatStringsSep " " startupLockUnit.Unit.Before;
+        requires = lib.concatStringsSep " " startupLockUnit.Unit.Requires;
+        requiredBy = lib.concatStringsSep " " startupLockUnit.Install.RequiredBy;
+        execStart = startupLockUnit.Service.ExecStart;
       }
       ''
-        first="$(grep -E '^exec-once=' "$conf" \
-          | grep -vE 'systemctl --user import-environment|dbus-update-activation-environment' \
-          | head -n1)"
-        if [ "$first" != "exec-once=keystone-startup-lock" ]; then
-          echo "FAIL: first user-visible exec-once must be keystone-startup-lock; got: ''${first:-<none>}" >&2
-          exit 1
-        fi
-        echo "PASS: keystone-startup-lock is the first user-visible exec-once"
+        test "$after" = wayland-session-waitenv.service
+        test "$requires" = wayland-session-waitenv.service
+        test "$before" = graphical-session.target
+        test "$requiredBy" = graphical-session.target
+        case "$execStart" in
+          */bin/keystone-startup-lock) ;;
+          *) echo "FAIL: unexpected startup lock command: $execStart" >&2; exit 1 ;;
+        esac
+        echo "PASS: startup lock gates graphical-session.target after UWSM readiness"
         touch "$out"
       '';
 

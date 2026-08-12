@@ -31,6 +31,27 @@ in
       };
     };
 
+    # This one-shot is a required transaction gate. UWSM first publishes and
+    # verifies WAYLAND_DISPLAY. The lock must then become observable before
+    # graphical-session.target can activate any user-visible service.
+    systemd.user.services.keystone-startup-lock = {
+      Unit = {
+        Description = "Verify the startup session lock";
+        Requires = [ "wayland-session-waitenv.service" ];
+        After = [ "wayland-session-waitenv.service" ];
+        Before = [ "graphical-session.target" ];
+        Conflicts = [ "wayland-session-shutdown.target" ];
+        OnFailure = [ "wayland-session-shutdown.target" ];
+        OnFailureJobMode = "replace-irreversibly";
+      };
+      Service = {
+        Type = "oneshot";
+        ExecStart = "${config.home.profileDirectory}/bin/keystone-startup-lock";
+        RemainAfterExit = true;
+      };
+      Install.RequiredBy = [ "graphical-session.target" ];
+    };
+
     systemd.user.services.hypridle = {
       Unit = {
         Description = "Hyprland idle manager";
