@@ -42,6 +42,10 @@ in
     # See ks-config#6.
     programs.hyprlock.enable = mkDefault true;
 
+    # Hyprland owns lid suspend so it can establish a verified session lock
+    # before requesting sleep. logind must not race the lid binding.
+    services.logind.settings.Login.HandleLidSwitch = mkDefault "ignore";
+
     # Greetd launches the user's Hyprland session directly. Startup
     # authentication happens inside Hyprland via keystone-startup-lock, which
     # MUST fail closed if hyprlock cannot come up securely.
@@ -128,6 +132,7 @@ in
       desktopInputs.hyprpaper.packages.${stdenv.hostPlatform.system}.hyprpaper
       keystone-desktop.hyprpolkitagent
       keystone-desktop.keystone-dpms-wake
+      keystone-desktop.keystone-lock
       waybar
       wofi
       mako

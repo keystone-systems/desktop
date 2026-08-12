@@ -8,6 +8,7 @@ let
   write-polkit-theme-src = ./write-polkit-theme;
   hyprpolkitagent-src = ./hyprpolkitagent;
   keystone-dpms-wake-src = ./keystone-dpms-wake.nix;
+  keystone-lock-src = ./keystone-lock.nix;
 in
 final: prev: {
   keystone-desktop = {
@@ -16,6 +17,9 @@ final: prev: {
     # hyprctl comes from this flake's hyprland input so IPC always matches
     # the compositor this flake pins.
     keystone-dpms-wake = final.callPackage keystone-dpms-wake-src {
+      hyprlandPkg = hyprland.packages.${final.stdenv.hostPlatform.system}.hyprland;
+    };
+    keystone-lock = final.callPackage keystone-lock-src {
       hyprlandPkg = hyprland.packages.${final.stdenv.hostPlatform.system}.hyprland;
     };
   };

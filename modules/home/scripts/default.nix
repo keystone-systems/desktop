@@ -11,6 +11,8 @@ let
   devScripts = import ../../../lib/dev-script-link.nix { inherit lib; };
   inherit (devScripts) mkHomeScriptCommand;
   hyprlandPkg = desktopInputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
+  keystoneLockPkg =
+    desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.keystone-lock;
 
   # Screen recording script using gpu-screen-recorder
   #
@@ -522,13 +524,14 @@ let
       commandName = "keystone-startup-lock";
       relativePath = "modules/home/scripts/keystone-startup-lock.sh";
       package = keystoneStartupLock;
+      # No uwsm/loginctl here: keystone-lock --fail-closed owns session
+      # termination. systemd is still needed for systemd-cat journal logging.
       runtimeInputs = [
         pkgs.coreutils
         hyprlandPkg
         pkgs.jq
-        pkgs.procps
         pkgs.systemd
-        pkgs.uwsm
+        keystoneLockPkg
       ];
     })
     (mkHomeScriptCommand {
@@ -567,6 +570,7 @@ let
         pkgs.systemd
         pkgs.walker
         pkgs.xdg-utils
+        keystoneLockPkg
       ]
       ++ optional (cfg.integration.ksPackage != null) cfg.integration.ksPackage;
       # Capability gating for ISSUE-REQ-1 (issue #390) and SPEC.md "Menu System":
