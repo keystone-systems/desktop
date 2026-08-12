@@ -12,6 +12,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     set -euo pipefail
 
     script="${../..}/modules/home/scripts/keystone-lock.sh"
+    startup_script="${../..}/modules/home/scripts/keystone-startup-lock.sh"
     test_root="$TMPDIR/lock-test"
     fake_bin="$test_root/bin"
     state_file="$test_root/state"
@@ -111,6 +112,12 @@ pkgs.runCommand "test-desktop-lock-recovery"
 
     if grep -Eq '\b(pidof|pgrep|pkill|flock)\b' "$script"; then
       echo "FAIL: keystone-lock must not use PID or mutex state as lock truth" >&2
+      exit 1
+    fi
+
+    grep -q 'keystone-lock' "$startup_script"
+    if grep -Eq 'pgrep|stable_lock|remained alive' "$startup_script"; then
+      echo "FAIL: startup lock must not accept PID existence or stability" >&2
       exit 1
     fi
 

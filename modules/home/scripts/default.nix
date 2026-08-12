@@ -11,6 +11,8 @@ let
   devScripts = import ../../../lib/dev-script-link.nix { inherit lib; };
   inherit (devScripts) mkHomeScriptCommand;
   hyprlandPkg = desktopInputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
+  keystoneLockPkg =
+    desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.keystone-lock;
 
   # Screen recording script using gpu-screen-recorder
   #
@@ -526,9 +528,9 @@ let
         pkgs.coreutils
         hyprlandPkg
         pkgs.jq
-        pkgs.procps
         pkgs.systemd
         pkgs.uwsm
+        keystoneLockPkg
       ];
     })
     (mkHomeScriptCommand {
