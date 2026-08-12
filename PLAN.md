@@ -6,6 +6,36 @@ Outcome: a stale `hyprlock` PID MUST NOT block later locks. Startup and
 pre-sleep failures MUST fail closed. An idle or interactive failure MUST report
 the error without closing applications.
 
+## Hyprland 0.56 Follow-Up
+
+Stage: **Program** — the compositor configuration contract changes from
+Hyprlang to Lua and the new desktop revision must move through Keystone OS and
+the fleet consumer.
+
+Outcome: a fresh Hyprland 0.56 session MUST load only Lua compositor
+configuration. UWSM MUST own the session environment and application
+lifecycle. A required systemd user service MUST verify the lock before
+`graphical-session.target` starts.
+
+```text
+◇  next patch
+│
+○  docs(hyprland): document the Lua runtime contract
+○  test(hyprland): verify Lua fleet compositions
+○  refactor(hyprland)!: adopt Lua and UWSM lifecycle
+○  refactor(session)!: gate startup on a verified lock
+○  fix(startup-lock): report requested termination
+○  test(lock): cover session rejection and teardown order
+○  fix(lock): use ordered UWSM teardown
+●  fix(lock): close fail-closed recovery races  2fc6886
+```
+
+The migration MUST preserve the existing binds, rules, monitors, theme
+selection, idle behavior, lid behavior, suspend behavior, and DPMS behavior.
+Hypridle, Hyprlock, Hyprpaper, Hyprsunset, and XDPH MUST retain their existing
+configuration formats. Tests MUST validate each theme and optional overlay
+composition with the pinned Hyprland 0.56 parser in an isolated environment.
+
 ## Evidence
 
 - A Hyprlock process survived suspend with no Hyprlock layer and
