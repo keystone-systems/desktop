@@ -244,6 +244,7 @@ let
   # rules.session.login attr missing on older nixpkgs) and rendering
   # regressions of the session-class rule.
   greetdPamText = evalHyprland.config.security.pam.services.greetd.text;
+  logindLidSwitch = evalHyprland.config.services.logind.settings.Login.HandleLidSwitch;
 in
 {
   # No personal literal may survive the template scrub: absolute home paths,
@@ -295,6 +296,19 @@ in
           exit 1
         fi
         echo "PASS: all template-invoked binaries are OS-level packages"
+        touch "$out"
+      '';
+
+  logind-lid-owner =
+    pkgs.runCommand "logind-lid-owner"
+      {
+        inherit logindLidSwitch;
+      }
+      ''
+        if [ "$logindLidSwitch" != "ignore" ]; then
+          echo "FAIL: logind must ignore lid events so lock verification precedes suspend" >&2
+          exit 1
+        fi
         touch "$out"
       '';
 

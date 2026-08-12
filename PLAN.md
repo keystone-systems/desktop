@@ -58,8 +58,8 @@ lane.
 ◇  next patch
 │
 ○  fix(hypridle): route every lock path through keystone-lock
-○  fix(startup-lock): require an observable lock state
-◉  feat(lock): add a verified session-lock helper  7661638
+◉  fix(startup-lock): require an observable lock state  eae33a9
+●  feat(lock): add a verified session-lock helper  7661638
 ●  feat(hyprland): seed xdph.conf with walker picker  1165030
 ```
 

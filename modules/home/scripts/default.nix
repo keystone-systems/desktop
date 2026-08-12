@@ -569,6 +569,7 @@ let
         pkgs.systemd
         pkgs.walker
         pkgs.xdg-utils
+        keystoneLockPkg
       ]
       ++ optional (cfg.integration.ksPackage != null) cfg.integration.ksPackage;
       # Capability gating for ISSUE-REQ-1 (issue #390) and SPEC.md "Menu System":

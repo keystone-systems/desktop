@@ -467,10 +467,10 @@ dispatch() {
       detach "$(keystone_cmd keystone-theme-switch)" "$arg1"
       ;;
     system-lock)
-      "$(keystone_cmd hyprlock)"
+      "$(keystone_cmd keystone-lock)"
       ;;
     system-suspend)
-      systemctl suspend
+      "$(keystone_cmd keystone-lock)" --fail-closed && systemctl suspend
       ;;
     system-restart)
       systemctl reboot

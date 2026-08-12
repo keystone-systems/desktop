@@ -13,6 +13,9 @@ pkgs.runCommand "test-desktop-lock-recovery"
 
     script="${../..}/modules/home/scripts/keystone-lock.sh"
     startup_script="${../..}/modules/home/scripts/keystone-startup-lock.sh"
+    hypridle_conf="${../..}/templates/hyprland/.config/hypr/hypridle.conf"
+    hyprland_conf="${../..}/templates/hyprland/.config/hypr/hyprland.conf"
+    main_menu="${../..}/modules/home/scripts/keystone-main-menu.sh"
     test_root="$TMPDIR/lock-test"
     fake_bin="$test_root/bin"
     state_file="$test_root/state"
@@ -120,6 +123,17 @@ pkgs.runCommand "test-desktop-lock-recovery"
       echo "FAIL: startup lock must not accept PID existence or stability" >&2
       exit 1
     fi
+
+    if grep -R 'pidof hyprlock' "${../..}/templates"; then
+      echo "FAIL: desktop templates must not use a Hyprlock PID as lock truth" >&2
+      exit 1
+    fi
+    grep -q '^  lock_cmd=keystone-lock$' "$hypridle_conf"
+    grep -q '^  before_sleep_cmd=keystone-lock --fail-closed$' "$hypridle_conf"
+    grep -q '^  on-timeout=keystone-lock$' "$hypridle_conf"
+    grep -q 'switch:on:Lid Switch, exec, keystone-lock --fail-closed && systemctl suspend' "$hyprland_conf"
+    grep -A2 'system-lock)' "$main_menu" | grep -q 'keystone-lock'
+    grep -A2 'system-suspend)' "$main_menu" | grep -q 'keystone-lock.*--fail-closed.*systemctl suspend'
 
     touch "$out"
   ''
