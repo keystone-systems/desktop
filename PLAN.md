@@ -57,8 +57,9 @@ lane.
 ```text
 ◇  next patch
 │
-○  fix(hypridle): route every lock path through keystone-lock
-◉  fix(startup-lock): require an observable lock state  eae33a9
+●  refactor(lock): simplify per Claude review  43aec72
+●  fix(hypridle): route every lock path through keystone-lock  e73f5e5
+●  fix(startup-lock): require an observable lock state  eae33a9
 ●  feat(lock): add a verified session-lock helper  7661638
 ●  feat(hyprland): seed xdph.conf with walker picker  1165030
 ```
@@ -112,7 +113,7 @@ The command MUST:
 
 1. Resolve the logind session from `XDG_SESSION_ID`. If it is absent, use the
    user's display session from `loginctl show-user`.
-2. Treat only `LockedHint=yes` or a Hyprlock layer as success.
+2. Treat only Hyprland's direct `hyprctl -j locked` state as success.
 3. Return success immediately when the session is already locked.
 4. Launch Hyprlock without checking for another Hyprlock PID.
 5. Poll real lock state for at most three seconds.
@@ -168,9 +169,9 @@ This leaves the remaining normal logind delay for teardown.
 
 Add one stub-driven shell check with four cases:
 
-1. `LockedHint=yes`: return success and do not launch Hyprlock.
-2. Hyprlock layer present with `LockedHint=no`: return success and do not
-   launch Hyprlock.
+1. Hyprland reports `locked=true`: return success and do not launch Hyprlock.
+2. A stale logind `LockedHint=yes`: launch Hyprlock and wait for Hyprland's
+   direct session-lock state.
 3. Stale PID with no lock: ignore the PID, launch Hyprlock, observe a real lock,
    and return success without killing the stale process.
 4. No lock appears: ordinary mode notifies and does not terminate the session;

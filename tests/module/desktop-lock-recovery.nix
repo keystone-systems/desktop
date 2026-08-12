@@ -42,12 +42,10 @@ pkgs.runCommand "test-desktop-lock-recovery"
 
     cat > "$fake_bin/hyprctl" <<'EOF'
     #!${pkgs.bash}/bin/bash
-    if [[ "''${1:-}" == "-j" && "''${2:-}" == "layers" ]]; then
-      if [[ "$(cat "$FAKE_LOCK_STATE")" == "layer" ]]; then
-        printf '{"layers":{"DP-1":{"levels":{"0":[{"namespace":"hyprlock"}]}}}}\n'
-      else
-        printf '{"layers":{}}\n'
-      fi
+    if [[ "''${1:-}" == "-j" && "''${2:-}" == "locked" ]]; then
+      [[ "$(cat "$FAKE_LOCK_STATE")" == "locked" ]] \
+        && printf '{"locked":true}\n' \
+        || printf '{"locked":false}\n'
     elif [[ "''${1:-}" == "dispatch" && "''${2:-}" == "exit" ]]; then
       printf 'hyprctl %s\n' "$*" >> "$FAKE_TERMINATE_LOG"
     fi
@@ -57,7 +55,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     #!${pkgs.bash}/bin/bash
     printf 'launch\n' >> "$FAKE_LAUNCH_LOG"
     if [[ "''${FAKE_LOCK_ON_LAUNCH:-false}" == "true" ]]; then
-      printf 'hint\n' > "$FAKE_LOCK_STATE"
+      printf 'locked\n' > "$FAKE_LOCK_STATE"
     fi
     EOF
 
@@ -92,7 +90,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     export FAKE_NOTIFY_LOG="$notify_log"
     export FAKE_TERMINATE_LOG="$terminate_log"
     export KEYSTONE_LOCK_POLL_INTERVAL_SECONDS=0.05
-    export KEYSTONE_LOCK_TIMEOUT_STEPS=4
+    export KEYSTONE_LOCK_TIMEOUT_MILLISECONDS=1000
     unset XDG_SESSION_ID
 
     fail() {
@@ -119,16 +117,18 @@ pkgs.runCommand "test-desktop-lock-recovery"
     }
 
     menu_arm() {
-      grep -A2 "$1)" "$main_menu"
+      grep -A4 "$1)" "$main_menu"
     }
 
-    # 1. LockedHint=yes is lock truth on its own.
-    check "LockedHint=yes must return success" run_lock hint
-    check "LockedHint=yes must not launch hyprlock" test ! -s "$launch_log"
+    # 1. Hyprland's session-lock state is authoritative.
+    check "Hyprland locked state must return success" run_lock locked
+    check "Hyprland locked state must not launch hyprlock" test ! -s "$launch_log"
 
-    # 2. A hyprlock layer is lock truth even while LockedHint=no.
-    check "a hyprlock layer must return success" run_lock layer
-    check "a hyprlock layer must not launch hyprlock" test ! -s "$launch_log"
+    # 2. A stale logind LockedHint is not compositor lock truth.
+    export FAKE_LOCK_ON_LAUNCH=true
+    check "stale LockedHint must not suppress the launch" run_lock hint
+    unset FAKE_LOCK_ON_LAUNCH
+    [[ "$(launch_count)" -eq 1 ]] || fail "expected one launch after stale LockedHint"
 
     # 3. A stale, inert hyprlock process is NOT lock truth: launch anyway,
     #    observe the real lock, and leave the stale process running.
@@ -158,11 +158,18 @@ pkgs.runCommand "test-desktop-lock-recovery"
     check "--fail-closed must stop uwsm" grep -q '^uwsm stop$' "$terminate_log"
     check "--fail-closed must terminate the logind session" \
       grep -q '^loginctl terminate-session 7$' "$terminate_log"
+    check "--fail-closed must request logind termination first" \
+      grep -q '^loginctl terminate-session 7$' <(head -n1 "$terminate_log")
 
     # Static guards: keystone-lock owns lock truth and session termination.
     if grep -Eq '\b(pidof|pgrep|pkill|flock)\b' "$script"; then
       fail "keystone-lock must not use PID or mutex state as lock truth"
     fi
+    if grep -Eq 'loginctl .*LockedHint|hyprctl -j layers' "$script"; then
+      fail "keystone-lock must use Hyprland's direct session-lock state"
+    fi
+    check "keystone-lock must query Hyprland's direct session-lock state" \
+      grep -q 'hyprctl -j locked' "$script"
     if grep -Eq '\b(pidof|pgrep|pkill)\b' "$startup_script"; then
       fail "startup lock must not accept PID existence or stability"
     fi
@@ -183,6 +190,8 @@ pkgs.runCommand "test-desktop-lock-recovery"
       grep -q '^  on-timeout=keystone-lock$' "$hypridle_conf"
     check "the lid must lock before it suspends" \
       grep -q 'switch:on:Lid Switch, exec, keystone-lock --fail-closed && systemctl suspend' "$hyprland_conf"
+    check "a failed lid lock must block suspend" \
+      grep -q 'failed lock requests session termination and deliberately blocks suspend' "$hyprland_conf"
     menu_arm system-lock | grep -q 'keystone_cmd keystone-lock' \
       || fail "the System menu lock entry must run keystone-lock"
     menu_arm system-suspend | grep -q -- '--fail-closed && systemctl suspend' \

@@ -18,7 +18,7 @@ case "${1:-}" in
 esac
 
 poll_interval_seconds="${KEYSTONE_LOCK_POLL_INTERVAL_SECONDS:-0.1}"
-timeout_steps="${KEYSTONE_LOCK_TIMEOUT_STEPS:-30}"
+timeout_milliseconds="${KEYSTONE_LOCK_TIMEOUT_MILLISECONDS:-3000}"
 
 log() {
   local priority="$1"
@@ -39,32 +39,20 @@ else
   [[ "$session" != "n/a" ]] || session=""
 fi
 
-session_locked() {
-  [[ -n "$session" ]] || return 1
-  [[ "$(loginctl show-session "$session" -p LockedHint --value 2>/dev/null)" == "yes" ]]
-}
-
-lock_surface_present() {
-  hyprctl -j layers 2>/dev/null | jq -e '
-    .. | objects | select(
-      (.namespace? // "") == "hyprlock"
-      or (.class? // "") == "hyprlock"
-      or (.name? // "") == "hyprlock"
-    )
-  ' >/dev/null 2>&1
-}
-
 lock_ready() {
-  session_locked || lock_surface_present
+  # Hyprland v0.56 exposes its ext-session-lock state directly. Do not use
+  # logind's LockedHint or layer-shell surfaces as substitutes: LockedHint can
+  # be stale, and ext-session-lock surfaces are not layer-shell surfaces.
+  hyprctl -j locked 2>/dev/null | jq -e '.locked == true' >/dev/null 2>&1
 }
 
 terminate_session() {
   log err "Terminating the desktop session because the lock did not become ready."
-  hyprctl dispatch exit >/dev/null 2>&1 || true
+  if [[ -n "$session" ]]; then
+    loginctl terminate-session "$session" >/dev/null 2>&1 || true
+  fi
   uwsm stop >/dev/null 2>&1 || true
-
-  [[ -n "$session" ]] || return 0
-  loginctl terminate-session "$session" >/dev/null 2>&1 || true
+  hyprctl dispatch exit >/dev/null 2>&1 || true
 }
 
 if lock_ready; then
@@ -77,9 +65,8 @@ hyprlock >/dev/null 2>&1 &
 
 # Real lock state stays authoritative: a concurrent launcher may win the
 # ext-session-lock race and establish the lock even if our own child exits.
-step=0
-while [[ "$step" -lt "$timeout_steps" ]]; do
-  step=$((step + 1))
+deadline_milliseconds=$(( $(date +%s%3N) + timeout_milliseconds ))
+while [[ "$(date +%s%3N)" -lt "$deadline_milliseconds" ]]; do
   sleep "$poll_interval_seconds"
 
   if lock_ready; then
