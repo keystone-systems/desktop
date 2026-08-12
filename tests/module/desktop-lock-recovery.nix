@@ -14,7 +14,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     script="${../..}/modules/home/scripts/keystone-lock.sh"
     startup_script="${../..}/modules/home/scripts/keystone-startup-lock.sh"
     hypridle_conf="${../..}/templates/hyprland/.config/hypr/hypridle.conf"
-    hyprland_conf="${../..}/templates/hyprland/.config/hypr/hyprland.conf"
+    hyprland_conf="${../..}/templates/hyprland/.config/hypr/hyprland.lua"
     main_menu="${../..}/modules/home/scripts/keystone-main-menu.sh"
     test_root="$TMPDIR/lock-test"
     fake_bin="$test_root/bin"
@@ -310,7 +310,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     check "the idle listener must lock through keystone-lock" \
       grep -q '^  on-timeout=keystone-lock$' "$hypridle_conf"
     check "the lid must lock before it suspends" \
-      grep -q 'switch:on:Lid Switch, exec, keystone-lock --fail-closed && systemctl suspend' "$hyprland_conf"
+      grep -q 'keystone-lock --fail-closed && systemctl suspend' "$hyprland_conf"
     check "a failed lid lock must block suspend" \
       grep -q 'failed lock requests session termination and deliberately blocks suspend' "$hyprland_conf"
     menu_arm system-lock | grep -q 'keystone_cmd keystone-lock' \

@@ -183,7 +183,12 @@
       lib.templatesPath = ./templates;
 
       checks.${system} = import ./tests {
-        inherit self nixpkgs home-manager;
+        inherit
+          self
+          nixpkgs
+          home-manager
+          hyprland
+          ;
         inherit system;
       };
 

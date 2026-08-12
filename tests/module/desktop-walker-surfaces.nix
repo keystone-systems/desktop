@@ -15,7 +15,7 @@ pkgs.runCommand "test-desktop-walker-surfaces"
 
     repo="${../..}"
     scripts="$repo/modules/home/scripts"
-    hyprland_conf="$repo/templates/hyprland/.config/hypr/hyprland.conf"
+    hyprland_conf="$repo/templates/hyprland/.config/hypr/hyprland.lua"
     waybar_config="$repo/templates/waybar/.config/waybar/config"
     default_nix="$scripts/default.nix"
     main_menu="$scripts/keystone-main-menu.sh"
@@ -27,8 +27,8 @@ pkgs.runCommand "test-desktop-walker-surfaces"
     }
 
     # ISSUE-REQ-2: $mod+Escape must default to the System menu.
-    if ! grep -F 'bind=$mod, Escape, exec, keystone-menu system' "$hyprland_conf" >/dev/null; then
-      fail "ISSUE-REQ-2: template \$mod+Escape bind must be 'keystone-menu system' (was 'keystone-menu')"
+    if ! grep -F 'bind(mod .. " + Escape", hl.dsp.exec_cmd(app .. "keystone-menu system"))' "$hyprland_conf" >/dev/null; then
+      fail "ISSUE-REQ-2: template \$mod+Escape bind must launch the System menu through UWSM"
     fi
 
     # ISSUE-REQ-8: Waybar network click must open the Keystone Wi-Fi flow, not nm-connection-editor.
