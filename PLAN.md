@@ -137,7 +137,9 @@ not create separate OS and Home Manager implementations.
 - Keep its monitor-readiness gate and fail-closed termination sequence.
 - Remove the existing-PID and stable-PID success paths.
 - Call `keystone-lock` for each bounded startup attempt.
-- Allow up to three attempts inside a 15-second startup deadline.
+- Allow up to three three-second attempts after the compositor-readiness gate.
+- Startup can take about 20 seconds in the worst case: 10 seconds for
+  readiness, 9 seconds for lock attempts, and retry delays.
 - Only an observable lock state can complete startup.
 
 ### Idle, lid, and interactive hooks
@@ -158,9 +160,9 @@ Update the reusable templates and active dotfiles together:
 - Do not change `keystone-dpms-wake` behavior in this incident.
 
 Do not add a logind timeout override. Hypridle with `inhibit_sleep=3` holds its
-delay inhibitor until the Wayland lock notification. The three-second command
-deadline leaves time for fail-closed termination before logind's normal delay
-expires.
+delay inhibitor until the Wayland lock notification. The pre-sleep command has
+one three-second attempt and then immediately starts fail-closed termination.
+This leaves the remaining normal logind delay for teardown.
 
 ## Verification
 

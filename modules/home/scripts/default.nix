@@ -524,12 +524,13 @@ let
       commandName = "keystone-startup-lock";
       relativePath = "modules/home/scripts/keystone-startup-lock.sh";
       package = keystoneStartupLock;
+      # No uwsm/loginctl here: keystone-lock --fail-closed owns session
+      # termination. systemd is still needed for systemd-cat journal logging.
       runtimeInputs = [
         pkgs.coreutils
         hyprlandPkg
         pkgs.jq
         pkgs.systemd
-        pkgs.uwsm
         keystoneLockPkg
       ];
     })

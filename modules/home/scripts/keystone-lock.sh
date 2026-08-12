@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
-set -u -o pipefail
+# Matches the options writeShellApplication injects around this text, so the
+# packaged binary and a direct `bash keystone-lock.sh` behave identically.
+set -euo pipefail
 
 fail_closed=false
 case "${1:-}" in
@@ -24,42 +26,32 @@ log() {
   local message="$*"
 
   printf 'keystone-lock: %s\n' "$message" >&2
-  if command -v systemd-cat >/dev/null 2>&1; then
-    printf '%s\n' "$message" | systemd-cat -t keystone-lock -p "$priority"
-  fi
+  printf '%s\n' "$message" | systemd-cat -t keystone-lock -p "$priority" || true
 }
 
-session_id() {
-  local display_session
-
-  if [[ -n "${XDG_SESSION_ID:-}" ]]; then
-    printf '%s\n' "$XDG_SESSION_ID"
-    return 0
-  fi
-
-  display_session="$(loginctl show-user "$(id -un)" -p Display --value 2>/dev/null)" || return 1
-  [[ -n "$display_session" && "$display_session" != "n/a" ]] || return 1
-  printf '%s\n' "$display_session"
-}
+# Resolved once: the logind session cannot change under a running lock request,
+# and session_locked() is called on every poll tick.
+session=""
+if [[ -n "${XDG_SESSION_ID:-}" ]]; then
+  session="$XDG_SESSION_ID"
+else
+  session="$(loginctl show-user "$(id -un)" -p Display --value 2>/dev/null || true)"
+  [[ "$session" != "n/a" ]] || session=""
+fi
 
 session_locked() {
-  local current_session
-
-  current_session="$(session_id)" || return 1
-  [[ "$(loginctl show-session "$current_session" -p LockedHint --value 2>/dev/null)" == "yes" ]]
+  [[ -n "$session" ]] || return 1
+  [[ "$(loginctl show-session "$session" -p LockedHint --value 2>/dev/null)" == "yes" ]]
 }
 
 lock_surface_present() {
-  local layers
-
-  layers="$(hyprctl -j layers 2>/dev/null)" || return 1
-  printf '%s\n' "$layers" | jq -e '
+  hyprctl -j layers 2>/dev/null | jq -e '
     .. | objects | select(
       (.namespace? // "") == "hyprlock"
       or (.class? // "") == "hyprlock"
       or (.name? // "") == "hyprlock"
     )
-  ' >/dev/null
+  ' >/dev/null 2>&1
 }
 
 lock_ready() {
@@ -67,14 +59,12 @@ lock_ready() {
 }
 
 terminate_session() {
-  local current_session
-
   log err "Terminating the desktop session because the lock did not become ready."
   hyprctl dispatch exit >/dev/null 2>&1 || true
   uwsm stop >/dev/null 2>&1 || true
 
-  current_session="$(session_id)" || return 0
-  loginctl terminate-session "$current_session" >/dev/null 2>&1 || true
+  [[ -n "$session" ]] || return 0
+  loginctl terminate-session "$session" >/dev/null 2>&1 || true
 }
 
 if lock_ready; then
@@ -84,27 +74,19 @@ fi
 
 log info "launching hyprlock"
 hyprlock >/dev/null 2>&1 &
-lock_pid=$!
 
-for _ in $(seq 1 "$timeout_steps"); do
+# Real lock state stays authoritative: a concurrent launcher may win the
+# ext-session-lock race and establish the lock even if our own child exits.
+step=0
+while [[ "$step" -lt "$timeout_steps" ]]; do
+  step=$((step + 1))
+  sleep "$poll_interval_seconds"
+
   if lock_ready; then
     log info "session lock is ready"
     exit 0
   fi
-
-  # A concurrent launcher may win the ext-session-lock race. The real lock
-  # state remains authoritative even when this process exits first.
-  if ! kill -0 "$lock_pid" >/dev/null 2>&1; then
-    wait "$lock_pid" >/dev/null 2>&1 || true
-  fi
-
-  sleep "$poll_interval_seconds"
 done
-
-if lock_ready; then
-  log info "session lock became ready at the deadline"
-  exit 0
-fi
 
 log err "hyprlock did not produce an observable lock state"
 notify-send -u critical "Screen lock failed" "Hyprlock did not establish a session lock." >/dev/null 2>&1 || true

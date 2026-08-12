@@ -7,7 +7,6 @@ set -u -o pipefail
 poll_interval_seconds="${KEYSTONE_STARTUP_LOCK_POLL_INTERVAL_SECONDS:-0.1}"
 readiness_timeout_steps="${KEYSTONE_STARTUP_LOCK_READINESS_TIMEOUT_STEPS:-100}"
 max_lock_attempts="${KEYSTONE_STARTUP_LOCK_MAX_ATTEMPTS:-3}"
-attempt_timeout_steps="${KEYSTONE_STARTUP_LOCK_ATTEMPT_TIMEOUT_STEPS:-30}"
 retry_delay_seconds="${KEYSTONE_STARTUP_LOCK_RETRY_DELAY:-0.5}"
 
 log() {
@@ -16,68 +15,55 @@ log() {
   local message="$*"
 
   printf 'keystone-startup-lock: %s\n' "$message" >&2
-  if command -v systemd-cat >/dev/null 2>&1; then
-    printf '%s\n' "$message" | systemd-cat -t keystone-startup-lock -p "$priority"
-  fi
+  printf '%s\n' "$message" | systemd-cat -t keystone-startup-lock -p "$priority" || true
 }
 
 session_lock_ready() {
-  local monitors
-
-  monitors="$(hyprctl -j monitors 2>/dev/null)" || return 1
-  printf '%s\n' "$monitors" | jq -e 'type == "array" and length > 0' >/dev/null
+  hyprctl -j monitors 2>/dev/null | jq -e 'type == "array" and length > 0' >/dev/null 2>&1
 }
 
-session_id() {
-  local display_session
+# The final lock request runs --fail-closed so keystone-lock owns the single
+# session teardown sequence (hyprctl exit, uwsm stop, logind session kill).
+# A second copy here is how the two paths drift apart.
+final_attempt() {
+  log info "requesting the final startup lock (fail closed)"
 
-  if [[ -n "${XDG_SESSION_ID:-}" ]]; then
-    printf '%s\n' "$XDG_SESSION_ID"
-    return 0
+  if keystone-lock --fail-closed; then
+    log info "startup lock is ready"
+    exit 0
   fi
 
-  display_session="$(loginctl show-user "$(id -un)" -p Display --value 2>/dev/null)" || return 1
-  [[ -n "$display_session" && "$display_session" != "n/a" ]] || return 1
-  printf '%s\n' "$display_session"
-}
-
-fail_closed() {
-  local reason="$1"
-  local current_session
-
-  log err "$reason"
-  log err "Terminating the desktop session instead of exposing an unlocked desktop."
-
-  hyprctl dispatch exit >/dev/null 2>&1 || true
-  uwsm stop >/dev/null 2>&1 || true
-
-  current_session="$(session_id)" || exit 1
-  loginctl terminate-session "$current_session" >/dev/null 2>&1 || true
+  log err "hyprlock produced no observable lock state; the desktop session was terminated"
   exit 1
 }
 
-for _ in $(seq 1 "$readiness_timeout_steps"); do
+ready=false
+step=0
+while [[ "$step" -lt "$readiness_timeout_steps" ]]; do
+  step=$((step + 1))
   if session_lock_ready; then
+    ready=true
     log info "session lock prerequisites are ready"
     break
   fi
   sleep "$poll_interval_seconds"
 done
 
-if ! session_lock_ready; then
-  fail_closed "Hyprland did not become ready for session locking before the startup deadline."
+if [[ "$ready" != true ]]; then
+  log err "Hyprland did not become ready for session locking before the startup deadline"
+  final_attempt
 fi
 
-for attempt in $(seq 1 "$max_lock_attempts"); do
+attempt=1
+while [[ "$attempt" -lt "$max_lock_attempts" ]]; do
   log info "requesting startup lock attempt ${attempt}/${max_lock_attempts}"
-  if KEYSTONE_LOCK_TIMEOUT_STEPS="$attempt_timeout_steps" keystone-lock; then
+  if keystone-lock; then
     log info "startup lock is ready"
     exit 0
   fi
 
-  if [[ "$attempt" -lt "$max_lock_attempts" ]]; then
-    sleep "$retry_delay_seconds"
-  fi
+  attempt=$((attempt + 1))
+  sleep "$retry_delay_seconds"
 done
 
-fail_closed "hyprlock failed to produce an observable lock state after ${max_lock_attempts} attempts."
+final_attempt
