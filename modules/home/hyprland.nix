@@ -11,6 +11,9 @@ let
   hyprpaperPkg = desktopInputs.hyprpaper.packages.${pkgs.stdenv.hostPlatform.system}.hyprpaper;
   keystoneLockPkg =
     desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.keystone-lock;
+  keystoneDpmsWakePkg =
+    desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.keystone-dpms-wake;
+  hyprlandPkg = desktopInputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
   hyprpolkitagentPkg =
     desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.hyprpolkitagent;
   graphicalService = description: execStart: {
@@ -111,7 +114,29 @@ in
         After = [ "graphical-session.target" ];
         Requisite = [ "graphical-session.target" ];
       };
-      Service.ExecStart = "${pkgs.hypridle}/bin/hypridle";
+      Service = {
+        ExecStart = "${pkgs.hypridle}/bin/hypridle";
+        # hypridle runs every listener command through /bin/sh, so the command
+        # resolves against THIS unit's PATH. The systemd user manager gives a
+        # closed PATH that holds only the session packages — `environment.
+        # systemPackages` does not reach a user service. Every binary the
+        # stowed hypridle.conf invokes by bare name must therefore be listed
+        # here, or the listener silently fails with "command not found" while
+        # the `||` fallback hides it. This is how keystone-dpms-wake stayed
+        # unreachable for weeks despite being installed system-wide.
+        Environment = [
+          "PATH=${
+            makeBinPath [
+              keystoneDpmsWakePkg
+              keystoneLockPkg
+              hyprlandPkg
+              pkgs.brightnessctl
+              pkgs.procps
+              pkgs.coreutils
+            ]
+          }"
+        ];
+      };
       Install.WantedBy = [ "graphical-session.target" ];
     };
 
