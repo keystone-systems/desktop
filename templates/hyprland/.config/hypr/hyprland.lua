@@ -29,6 +29,12 @@ hl.config({
     disable_splash_rendering = true,
     disable_watchdog_warning = true,
     force_default_wallpaper = 0,
+    -- Input must be able to wake a blanked panel. Without these, the only
+    -- ways back from DPMS off are hypridle's on-resume hook and the lid-open
+    -- bind below — so a single failure in that hook leaves the display dark
+    -- with no recovery short of closing and reopening the lid.
+    key_press_enables_dpms = true,
+    mouse_move_enables_dpms = true,
   },
   xwayland = { force_zero_scaling = true },
 })
