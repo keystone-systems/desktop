@@ -30,10 +30,20 @@ writeShellApplication {
       logger -t keystone-dpms-wake -- "$*" || true
     }
 
+    # hyprctl dispatch takes Lua since Hyprland 0.56, so the legacy
+    # `dispatch dpms on` string is a Lua syntax error rather than an unknown
+    # dispatcher. Every call here is `|| log`-guarded, which is precisely how
+    # that breakage stayed invisible across the 0.56 migration: the watchdog
+    # ran, logged a failure nobody read, and recovered nothing.
+    dpms() {
+      hyprctl dispatch "hl.dsp.dpms({ action = \"$1\" })" >/dev/null 2>&1 ||
+        log "dpms $1 dispatch failed"
+    }
+
     # Preserve today's on-resume semantics first: wake the outputs and
     # restore brightness.
-    log "wake: hyprctl dispatch dpms on; brightnessctl -r"
-    hyprctl dispatch dpms on >/dev/null 2>&1 || log "hyprctl dispatch dpms on failed"
+    log "wake: dpms on; brightnessctl -r"
+    dpms on
     brightnessctl -r >/dev/null 2>&1 || log "brightnessctl -r failed"
 
     # Give DRM connectors time to settle before judging them wedged.
@@ -79,9 +89,9 @@ writeShellApplication {
     while [ -n "$wedged" ] && [ "$attempt" -lt 3 ]; do
       attempt=$((attempt + 1))
       log "wedged connectors: $(printf '%s ' "$wedged") — dpms off/on retry $attempt/3"
-      hyprctl dispatch dpms off >/dev/null 2>&1 || log "hyprctl dispatch dpms off failed"
+      dpms off
       sleep 0.5
-      hyprctl dispatch dpms on >/dev/null 2>&1 || log "hyprctl dispatch dpms on failed"
+      dpms on
       sleep 2
       wedged="$(wedged_connectors)"
     done

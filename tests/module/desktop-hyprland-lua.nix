@@ -239,6 +239,29 @@ pkgs.runCommand "test-desktop-hyprland-lua"
           "$templates/hyprland/.config/hypr"; then
           fail "legacy startup or compositor-native exit remains"
         fi
+
+        # Since 0.56 hyprctl evaluates its dispatch argument as Lua, so the
+        # legacy bareword form `hyprctl dispatch dpms off` is a SYNTAX ERROR,
+        # not an unknown dispatcher. Every DPMS call site swallows its error
+        # (`|| log`, `|| (...)`), so nothing surfaced and the panel just
+        # stayed dark. Require the hl.dsp.* form wherever DPMS is dispatched.
+        # Comment lines are prose about this very contract, not invocations.
+        legacy_dispatch="$(grep -RnE "hyprctl dispatch +[a-z]" \
+          "$templates/hyprland/.config/hypr" ${../..}/pkgs \
+          | grep -vE ':[0-9]+:[[:space:]]*#' || true)"
+        if [ -n "$legacy_dispatch" ]; then
+          echo "$legacy_dispatch" >&2
+          fail "hyprctl dispatch must pass Lua (hl.dsp.*), not a legacy bareword"
+        fi
+
+        # Input must be able to rescue a blanked panel. With these off, the
+        # only routes back from DPMS off are hypridle's on-resume hook and the
+        # lid-open bind — so one broken hook strands the display dark.
+        grep -Fq "key_press_enables_dpms = true" "$main" \
+          || fail "key presses must wake the display from DPMS off"
+        grep -Fq "mouse_move_enables_dpms = true" "$main" \
+          || fail "mouse movement must wake the display from DPMS off"
+
         if ! start_callbacks_are_safe \
           "$templates/hyprland/.config/hypr/hyprland.lua" \
           "$templates/hyprland/.config/hypr/user.lua" \
