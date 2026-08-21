@@ -296,6 +296,52 @@ Everything that was previously a Nix option for editable desktop behavior
 (modifier key, scale, monitors, terminal/browser/fileManager commands,
 capslock remap) is now template content — edit your dotfiles instead.
 
+## Security and Power Hook Execution
+
+Desktop hooks run in systemd user services. They do not inherit the login
+shell environment. Nix MUST define the executable environment for these
+hooks.
+
+### Security Hooks
+
+- A security-critical hook MUST invoke a Nix-owned wrapper. The unit MUST use
+  an absolute wrapper path or declare the wrapper package in its explicit
+  `PATH`. The hook MUST NOT depend on an inherited `PATH` or a login shell.
+- A Nix-owned security wrapper MUST declare each runtime dependency. The
+  wrapper MUST invoke each dependency through an absolute Nix store path.
+- A desktop-owned sleep path MUST NOT request suspend or hibernate before the
+  lock becomes observable. If an external sleep request has already started,
+  a failed lock check MUST request session teardown before the hook releases
+  its sleep inhibitor.
+- NixOS and Home Manager SHOULD NOT own different parts of the same security
+  unit. If both layers modify one unit, a test MUST verify the final merged
+  unit and its complete execution environment.
+
+### Power and Display Hooks
+
+- A non-security power hook MAY use a bare command name only when the rendered
+  service declares the command package in its explicit `PATH`.
+- A power hook MUST NOT depend on `environment.systemPackages` or an inherited
+  user-service `PATH` for command resolution.
+- Display sleep-and-wake validation MUST verify command resolution and the
+  Hyprland DPMS dispatch path as separate properties.
+- Real-hardware acceptance MUST verify that each connected display turns off
+  and returns after idle sleep and system resume.
+
+### Validation
+
+- Tests MUST inspect the final rendered systemd unit after all NixOS and Home
+  Manager merges. Tests MUST NOT use an intermediate module option as proof of
+  the final execution environment.
+- An isolated negative test MUST inject command-start and lock-check failures.
+  It MUST verify that a desktop-owned path does not request sleep before a
+  verified lock or session teardown.
+- A rendered-unit test MUST verify every executable that the shipped Hypridle
+  template invokes by name. An activation check MAY validate additional user
+  commands through a declared command manifest.
+- An activation check SHOULD report a missing unit, invalid executable path,
+  or incomplete service `PATH` before it reports a successful desktop switch.
+
 ## DPMS Wake Recovery
 
 `keystone-dpms-wake` (this flake's overlay) is a watchdog for outputs that
