@@ -42,6 +42,32 @@ in
     # See ks-config#6.
     programs.hyprlock.enable = mkDefault true;
 
+    # greetd opens the long-lived graphical session without a password, so
+    # gnome-keyring-daemon starts in the locked state and the first Hyprlock
+    # authentication below supplies the password that creates or unlocks the
+    # login keyring.
+    security.pam.services = {
+      # Inert on pins where greetd substacks `login` (the daemon is started by
+      # the login stack, which upstream gnome-keyring.nix already enables, and
+      # which tests/default.nix asserts against). Retained for pins where
+      # greetd renders its own stack.
+      greetd.enableGnomeKeyring = mkDefault true;
+
+      # Password authentication on any later lock can unlock a keyring that
+      # was explicitly locked or restarted. The user's normal Hyprlock config
+      # remains free to offer native parallel fingerprint authentication.
+      hyprlock.enableGnomeKeyring = mkDefault true;
+
+      # The first visible authentication surface after boot is Hyprlock, but
+      # it must collect the account password: a fingerprint carries no
+      # PAM_AUTHTOK and cannot unlock an encrypted login keyring. This service
+      # is selected only by keystone-lock --startup's Nix-owned config.
+      hyprlock-startup = {
+        enableGnomeKeyring = mkDefault true;
+        fprintAuth = mkForce false;
+      };
+    };
+
     # programs.hyprlock enables the NixOS services.hypridle module. That
     # module installs an /etc/systemd/user drop-in whose PATH overrides the
     # PATH on the Home Manager hypridle unit below it, so the keystone hooks

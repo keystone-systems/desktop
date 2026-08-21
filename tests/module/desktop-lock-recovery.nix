@@ -13,6 +13,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
 
     script="${../..}/modules/home/scripts/keystone-lock.sh"
     startup_script="${../..}/modules/home/scripts/keystone-startup-lock.sh"
+    startup_config="${../..}/pkgs/keystone-hyprlock-startup.conf"
     hypridle_conf="${../..}/templates/hyprland/.config/hypr/hypridle.conf"
     hyprland_conf="${../..}/templates/hyprland/.config/hypr/hyprland.lua"
     main_menu="${../..}/modules/home/scripts/keystone-main-menu.sh"
@@ -122,6 +123,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     export KEYSTONE_LOCK_POLL_INTERVAL_SECONDS=0.05
     export KEYSTONE_LOCK_TIMEOUT_MILLISECONDS=1000
     export KEYSTONE_LOCK_TEARDOWN_TIMEOUT_MILLISECONDS=250
+    export KEYSTONE_LOCK_STARTUP_CONFIG="$startup_config"
     unset XDG_SESSION_ID
 
     fail() {
@@ -148,6 +150,10 @@ pkgs.runCommand "test-desktop-lock-recovery"
       grep -c '^launch --immediate-render$' "$launch_log" || true
     }
 
+    startup_launch_count() {
+      grep -c "^launch --immediate-render --config $startup_config$" "$launch_log" || true
+    }
+
     menu_arm() {
       grep -A4 "$1)" "$main_menu"
     }
@@ -155,6 +161,22 @@ pkgs.runCommand "test-desktop-lock-recovery"
     # 1. Hyprland's session-lock state is authoritative.
     check "Hyprland locked state must return success" run_lock locked
     check "Hyprland locked state must not launch hyprlock" test ! -s "$launch_log"
+
+    # Startup mode is an order-independent addition to the same verified lock
+    # path. It changes only the selected Hyprlock config.
+    export FAKE_LOCK_ON_LAUNCH=true
+    check "startup mode must establish a lock" run_lock none --startup
+    [[ "$(startup_launch_count)" -eq 1 ]] || fail "startup mode did not select its Nix-owned config"
+    check "combined startup/fail-closed flags must work in either order" \
+      run_lock none --fail-closed --startup
+    [[ "$(startup_launch_count)" -eq 1 ]] || fail "reordered startup flags changed the launch"
+    unset FAKE_LOCK_ON_LAUNCH
+
+    set +e
+    run_lock none --unknown >/dev/null 2>&1
+    unknown_status=$?
+    set -e
+    [[ "$unknown_status" -eq 2 ]] || fail "unknown flags must return status 2"
 
     # 2. A stale logind LockedHint is not compositor lock truth.
     export FAKE_LOCK_ON_LAUNCH=true
@@ -295,7 +317,9 @@ pkgs.runCommand "test-desktop-lock-recovery"
       fail "startup lock must not accept PID existence or stability"
     fi
     check "startup lock must delegate its fail-closed path to keystone-lock" \
-      grep -q 'keystone-lock --fail-closed' "$startup_script"
+      grep -q 'keystone-lock --startup --fail-closed' "$startup_script"
+    check "every ordinary startup attempt must select the startup config" \
+      grep -q 'keystone-lock --startup' "$startup_script"
     if grep -q 'terminate-session' "$startup_script"; then
       fail "session termination must live only in keystone-lock --fail-closed"
     fi

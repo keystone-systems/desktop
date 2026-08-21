@@ -67,6 +67,23 @@ in
     # deferred; enable the daemon first so enrollment via the Walker menu works.
     services.fprintd.enable = mkDefault true;
 
+    # Desktop applications use the Secret Service API for local credentials
+    # such as Chromium's Safe Storage key. The daemon starts with the desktop
+    # session and the Hyprland module below wires its login keyring to the
+    # verified startup lock password.
+    services.gnome.gnome-keyring.enable = mkDefault true;
+
+    # Keystone owns SSH agent selection and YubiKey integration. Enabling
+    # GNOME Keyring must not silently install GCR as a competing SSH agent.
+    # mkForce, not mkDefault: nixpkgs' GNOME desktop-manager module also
+    # defines this as `mkDefault true`, so a mkDefault here is a same-priority
+    # conflict that fails eval outright on `environment = "gnome"`.
+    services.gnome.gcr-ssh-agent.enable = mkForce false;
+
+    # Keep the login keyring password synchronized with account password
+    # changes made through passwd.
+    security.pam.services.passwd.enableGnomeKeyring = mkDefault true;
+
     # Printing (CUPS + Avahi/mDNS discovery)
     services.printing.enable = mkDefault true;
     services.avahi = {

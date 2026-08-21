@@ -28,7 +28,7 @@ session_lock_ready() {
 final_attempt() {
   log info "requesting the final startup lock (fail closed)"
 
-  if keystone-lock --fail-closed; then
+  if keystone-lock --startup --fail-closed; then
     log info "startup lock is ready"
     exit 0
   fi
@@ -57,7 +57,7 @@ fi
 attempt=1
 while [[ "$attempt" -lt "$max_lock_attempts" ]]; do
   log info "requesting startup lock attempt ${attempt}/${max_lock_attempts}"
-  if keystone-lock; then
+  if keystone-lock --startup; then
     log info "startup lock is ready"
     exit 0
   fi

@@ -4,18 +4,22 @@
 set -euo pipefail
 
 fail_closed=false
-case "${1:-}" in
-  "") ;;
-  --fail-closed) fail_closed=true ;;
-  -h | --help)
-    printf 'Usage: keystone-lock [--fail-closed]\n'
-    exit 0
-    ;;
-  *)
-    printf 'Unknown argument: %s\n' "$1" >&2
-    exit 2
-    ;;
-esac
+startup=false
+while [[ "$#" -gt 0 ]]; do
+  case "$1" in
+    --fail-closed) fail_closed=true ;;
+    --startup) startup=true ;;
+    -h | --help)
+      printf 'Usage: keystone-lock [--startup] [--fail-closed]\n'
+      exit 0
+      ;;
+    *)
+      printf 'Unknown argument: %s\n' "$1" >&2
+      exit 2
+      ;;
+  esac
+  shift
+done
 
 poll_interval_seconds="${KEYSTONE_LOCK_POLL_INTERVAL_SECONDS:-0.1}"
 timeout_milliseconds="${KEYSTONE_LOCK_TIMEOUT_MILLISECONDS:-3000}"
@@ -103,7 +107,12 @@ if lock_ready; then
 fi
 
 log info "launching hyprlock"
-hyprlock --immediate-render >/dev/null 2>&1 &
+hyprlock_args=(--immediate-render)
+if [[ "$startup" == true ]]; then
+  startup_config="${KEYSTONE_LOCK_STARTUP_CONFIG:?keystone-lock --startup requires a Nix-owned Hyprlock config}"
+  hyprlock_args+=(--config "$startup_config")
+fi
+hyprlock "${hyprlock_args[@]}" >/dev/null 2>&1 &
 
 # Real lock state stays authoritative: a concurrent launcher may win the
 # ext-session-lock race and establish the lock even if our own child exits.
