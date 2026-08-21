@@ -42,6 +42,27 @@ in
     # See ks-config#6.
     programs.hyprlock.enable = mkDefault true;
 
+    # programs.hyprlock enables the NixOS services.hypridle module. That
+    # module installs an /etc/systemd/user drop-in whose PATH overrides the
+    # PATH on the Home Manager hypridle unit below it, so the keystone hooks
+    # must be added here to survive; otherwise the before-sleep lock fails as
+    # "command not found" and sleep continues without an established session
+    # lock. hyprctl is deliberately inherited from the upstream
+    # services.hypridle path, so the hypridle-hook-path check pins it against
+    # the rendered unit and an upstream change fails loudly. hyprlock and
+    # procps arrive the same way but stay unpinned — no hook invokes them by
+    # bare name (keystone-lock wraps hyprlock via runtimeInputs).
+    # Gated at the attrset, not on `.path`: `services.hypridle.path = mkIf ...`
+    # would still create the `hypridle` attribute and render an ExecStart-less
+    # unit into /etc/systemd/user on a host that opts out.
+    systemd.user.services = mkIf config.services.hypridle.enable {
+      hypridle.path = with pkgs; [
+        keystone-desktop.keystone-dpms-wake
+        keystone-desktop.keystone-lock
+        brightnessctl
+      ];
+    };
+
     # Hyprland owns lid suspend so it can establish a verified session lock
     # before requesting sleep. logind must not race the lid binding.
     services.logind.settings.Login.HandleLidSwitch = mkDefault "ignore";

@@ -78,6 +78,29 @@ let
   ];
   systemPackageNames = map lib.getName evalHyprland.config.environment.systemPackages;
   missingBinaries = lib.filter (name: !(lib.elem name systemPackageNames)) templateBinaries;
+  # Commands the stowed hypridle.conf invokes by bare name, mapped to the
+  # package that must supply them. Asserted against the RENDERED unit (below)
+  # rather than the pre-merge option: the drop-in NixOS generates is what
+  # overrides the Home Manager unit PATH, and the option merges whether or not
+  # the service is enabled, so an option-level check passes vacuously.
+  # hyprctl is why this maps commands to packages instead of listing names —
+  # it ships inside the package named "hyprland".
+  hypridleHookPackages = {
+    inherit (evalHyprland.pkgs) brightnessctl;
+    inherit (evalHyprland.pkgs.keystone-desktop) keystone-dpms-wake keystone-lock;
+    hyprctl = evalHyprland.config.programs.hyprland.package;
+  };
+  hypridleUnitText = evalHyprland.config.systemd.user.units."hypridle.service".text;
+  # Matching each package's real store path keeps this exact (no version
+  # guessing) and keeps the comparison at eval time: only the plain command
+  # names survive into the derivation, so the check never pulls the compositor
+  # into its closure. The needle is context-stripped because lib.hasInfix
+  # compiles it into a regex, and Nix rejects store-path context there.
+  missingHypridleHookBinaries = lib.attrNames (
+    lib.filterAttrs (
+      _: pkg: !(lib.hasInfix (builtins.unsafeDiscardStringContext "${pkg}/bin") hypridleUnitText)
+    ) hypridleHookPackages
+  );
 
   # greetd and gdm must never both be configured (or both be missing) for a
   # selected environment — every DE branch is mkIf-gated on the enum.
@@ -437,6 +460,24 @@ in
       ''
         if [ "$logindLidSwitch" != "ignore" ]; then
           echo "FAIL: logind must ignore lid events so lock verification precedes suspend" >&2
+          exit 1
+        fi
+        touch "$out"
+      '';
+
+  hypridle-hook-path =
+    pkgs.runCommand "hypridle-hook-path"
+      {
+        hypridleEnabled = lib.boolToString evalHyprland.config.services.hypridle.enable;
+        missing = lib.concatStringsSep " " missingHypridleHookBinaries;
+      }
+      ''
+        if [ "$hypridleEnabled" != "true" ]; then
+          echo "FAIL: services.hypridle is disabled, so no NixOS drop-in corrects the hypridle unit PATH" >&2
+          exit 1
+        fi
+        if [ -n "$missing" ]; then
+          echo "FAIL: rendered hypridle unit PATH is missing hook commands: $missing" >&2
           exit 1
         fi
         touch "$out"
