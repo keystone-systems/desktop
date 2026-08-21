@@ -116,7 +116,11 @@ processes before the lock gate.
 The required `keystone-startup-lock.service` starts after
 `wayland-session-waitenv.service` and before `graphical-session.target`. The
 graphical services cannot start until Hyprland exposes an observable session
-lock. See `conventions/os.hyprland-autostart.md`.
+lock. That first Hyprlock uses the account password to create or unlock GNOME
+Keyring. Later locks MAY use the fingerprint support from the user's mutable
+Hyprlock configuration. GCR's SSH agent stays disabled because Keystone owns
+SSH agent and YubiKey integration. See
+`conventions/os.hyprland-autostart.md`.
 
 ## Pinning / overriding the desktop version
 

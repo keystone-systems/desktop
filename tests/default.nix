@@ -335,6 +335,10 @@ let
   # rules.session.login attr missing on older nixpkgs) and rendering
   # regressions of the session-class rule.
   greetdPamText = evalHyprland.config.security.pam.services.greetd.text;
+  loginPamText = evalHyprland.config.security.pam.services.login.text;
+  hyprlockPamText = evalHyprland.config.security.pam.services.hyprlock.text;
+  startupPamText = evalHyprland.config.security.pam.services.hyprlock-startup.text;
+  passwdPamText = evalHyprland.config.security.pam.services.passwd.text;
   logindLidSwitch = evalHyprland.config.services.logind.settings.Login.HandleLidSwitch;
 in
 {
@@ -525,6 +529,86 @@ in
         fi
 
         echo "PASS(eval-hyprland): greetd=$greetd gdm=$gdm; pam_systemd line $sysline; login include line ''${incline:-<absent>}"
+        touch "$out"
+      '';
+
+  desktop-gnome-keyring =
+    pkgs.runCommand "desktop-gnome-keyring"
+      {
+        nativeBuildInputs = [ pkgs.gnugrep ];
+        keyringEnabled = lib.boolToString evalHyprland.config.services.gnome.gnome-keyring.enable;
+        gcrSshAgentEnabled = lib.boolToString evalHyprland.config.services.gnome.gcr-ssh-agent.enable;
+        # Forces the GNOME eval too: nixpkgs' GNOME desktop-manager defines
+        # this option itself, so a same-priority definition here is an eval
+        # error that only the gnome branch reaches.
+        gcrSshAgentEnabledGnome = lib.boolToString evalGnome.config.services.gnome.gcr-ssh-agent.enable;
+        lockText = evalHyprland.pkgs.keystone-desktop.keystone-lock.text;
+        expectedExport = "export KEYSTONE_LOCK_STARTUP_CONFIG=${evalHyprland.pkgs.keystone-desktop.keystone-lock.startupConfig}";
+        greetdPam = greetdPamText;
+        loginPam = loginPamText;
+        hyprlockPam = hyprlockPamText;
+        startupPam = startupPamText;
+        passwdPam = passwdPamText;
+        startupConfig = evalHyprland.pkgs.keystone-desktop.keystone-lock.startupConfig;
+        passAsFile = [
+          "lockText"
+          "greetdPam"
+          "loginPam"
+          "hyprlockPam"
+          "startupPam"
+          "passwdPam"
+        ];
+      }
+      ''
+        # require/refute: assert a pattern is present in / absent from a file.
+        require() { grep -Eq "$2" "$3" || { echo "FAIL: $1" >&2; exit 1; }; }
+        refute() { grep -Eq "$2" "$3" && { echo "FAIL: $1" >&2; exit 1; }; :; }
+
+        if [ "$keyringEnabled" != true ]; then
+          echo "FAIL: GNOME Keyring is not enabled for the desktop" >&2
+          exit 1
+        fi
+        if [ "$gcrSshAgentEnabled" != false ]; then
+          echo "FAIL: GCR replaced Keystone's SSH agent" >&2
+          exit 1
+        fi
+        if [ "$gcrSshAgentEnabledGnome" != false ]; then
+          echo "FAIL: GCR replaced Keystone's SSH agent on the GNOME desktop" >&2
+          exit 1
+        fi
+
+        # The packaged binary MUST own the startup config: an ambient
+        # KEYSTONE_LOCK_STARTUP_CONFIG may never select the boot lock's
+        # password-only Hyprlock config.
+        if ! grep -Fqx "$expectedExport" "$lockTextPath"; then
+          echo "FAIL: keystone-lock does not unconditionally export its Nix-owned startup config" >&2
+          exit 1
+        fi
+
+        require "greetd does not enter the login PAM session" \
+          '^session[[:space:]]+include[[:space:]]+login' "$greetdPamPath"
+        require "the login PAM session does not start GNOME Keyring" \
+          '^session[[:space:]]+optional.*pam_gnome_keyring\.so.*auto_start' "$loginPamPath"
+        require "normal Hyprlock lacks GNOME Keyring authentication" \
+          '^auth[[:space:]]+optional.*pam_gnome_keyring\.so' "$hyprlockPamPath"
+        require "startup Hyprlock lacks GNOME Keyring authentication" \
+          '^auth[[:space:]]+optional.*pam_gnome_keyring\.so' "$startupPamPath"
+        require "startup Hyprlock lacks password authentication" \
+          '^auth[[:space:]].*pam_unix\.so' "$startupPamPath"
+        refute "startup Hyprlock permits fingerprint authentication" \
+          'pam_fprintd\.so' "$startupPamPath"
+        require "passwd lacks GNOME Keyring password synchronization" \
+          '^password[[:space:]]+optional.*pam_gnome_keyring\.so.*use_authtok' "$passwdPamPath"
+
+        require "startup config selects the wrong PAM service" \
+          '^    module=hyprlock-startup$' "$startupConfig"
+        require "startup config permits native fingerprint authentication" \
+          '^    enabled=false$' "$startupConfig"
+        require "startup config lacks a password input" \
+          '^input-field \{' "$startupConfig"
+        refute "startup config depends on mutable user state or commands" \
+          '(^|[[:space:]])source[[:space:]]*=|\$HOME|exec\(' "$startupConfig"
+
         touch "$out"
       '';
   eval-gnome = mkStubWarningGate "eval-gnome" evalGnome (
