@@ -13,6 +13,8 @@ let
   hyprlandPkg = desktopInputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
   keystoneLockPkg =
     desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.keystone-lock;
+  keystoneSuspendPkg =
+    desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.keystone-suspend;
 
   # Screen recording script using gpu-screen-recorder
   #
@@ -571,6 +573,7 @@ let
         pkgs.walker
         pkgs.xdg-utils
         keystoneLockPkg
+        keystoneSuspendPkg
       ]
       ++ optional (cfg.integration.ksPackage != null) cfg.integration.ksPackage;
       # Capability gating for ISSUE-REQ-1 (issue #390) and SPEC.md "Menu System":

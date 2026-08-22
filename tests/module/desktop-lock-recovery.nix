@@ -12,6 +12,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     set -euo pipefail
 
     script="${../..}/modules/home/scripts/keystone-lock.sh"
+    suspend_script="${../..}/modules/home/scripts/keystone-suspend.sh"
     startup_script="${../..}/modules/home/scripts/keystone-startup-lock.sh"
     startup_config="${../..}/pkgs/keystone-hyprlock-startup.conf"
     hypridle_conf="${../..}/templates/hyprland/.config/hypr/hypridle.conf"
@@ -25,12 +26,19 @@ pkgs.runCommand "test-desktop-lock-recovery"
     notify_log="$test_root/notify.log"
     terminate_log="$test_root/terminate.log"
     query_count_file="$test_root/query-count"
+    suspend_log="$test_root/suspend.log"
+    power_supply_root="$test_root/power-supply"
+    hibernate_marker="$test_root/suspend-then-hibernate"
     mkdir -p "$fake_bin"
     : > "$stale_pid_file"
     : > "$launch_log"
     : > "$notify_log"
     : > "$terminate_log"
     printf '0\n' > "$query_count_file"
+    : > "$suspend_log"
+    mkdir -p "$power_supply_root/AC"
+    printf 'Mains\n' > "$power_supply_root/AC/type"
+    printf '0\n' > "$power_supply_root/AC/online"
 
     cat > "$fake_bin/loginctl" <<'EOF'
     #!${pkgs.bash}/bin/bash
@@ -333,14 +341,67 @@ pkgs.runCommand "test-desktop-lock-recovery"
       grep -q '^  before_sleep_cmd=keystone-lock --fail-closed$' "$hypridle_conf"
     check "the idle listener must lock through keystone-lock" \
       grep -q '^  on-timeout=keystone-lock$' "$hypridle_conf"
-    check "the lid must lock before it suspends" \
-      grep -q 'keystone-lock --fail-closed && systemctl suspend' "$hyprland_conf"
-    check "a failed lid lock must block suspend" \
-      grep -q 'failed lock requests session termination and deliberately blocks suspend' "$hyprland_conf"
+    check "the lid must use the suspend policy helper" \
+      grep -q 'keystone-suspend --lid' "$hyprland_conf"
     menu_arm system-lock | grep -q 'keystone_cmd keystone-lock' \
       || fail "the System menu lock entry must run keystone-lock"
-    menu_arm system-suspend | grep -q -- '--fail-closed && systemctl suspend' \
-      || fail "the System menu suspend entry must lock, fail closed, before suspending"
+    menu_arm system-suspend | grep -q 'keystone_cmd keystone-suspend' \
+      || fail "the System menu suspend entry must use keystone-suspend"
+
+    cat > "$fake_bin/keystone-lock" <<'EOF'
+    #!${pkgs.bash}/bin/bash
+    printf 'lock %s\n' "$*" >> "$FAKE_SUSPEND_LOG"
+    [[ "''${FAKE_LOCK_FAIL:-false}" != "true" ]]
+    EOF
+    cat > "$fake_bin/systemctl" <<'EOF'
+    #!${pkgs.bash}/bin/bash
+    printf 'systemctl %s\n' "$*" >> "$FAKE_SUSPEND_LOG"
+    EOF
+    chmod +x "$fake_bin/keystone-lock" "$fake_bin/systemctl"
+    export FAKE_SUSPEND_LOG="$suspend_log"
+    export KEYSTONE_POWER_SUPPLY_ROOT="$power_supply_root"
+    export KEYSTONE_SUSPEND_THEN_HIBERNATE_MARKER="$hibernate_marker"
+
+    run_suspend() {
+      : > "$suspend_log"
+      ${pkgs.bash}/bin/bash "$suspend_script" "$@"
+    }
+
+    touch "$hibernate_marker"
+    printf '0\n' > "$power_supply_root/AC/online"
+    check "battery lid close must succeed" run_suspend --lid
+    grep -qx 'lock --fail-closed' "$suspend_log" \
+      || fail "battery lid close did not lock"
+    grep -qx 'systemctl suspend-then-hibernate' "$suspend_log" \
+      || fail "battery lid close did not request suspend-then-hibernate"
+
+    printf '1\n' > "$power_supply_root/AC/online"
+    check "AC lid close must succeed" run_suspend --lid
+    check "AC lid close must not lock or sleep" test ! -s "$suspend_log"
+
+    printf '0\n' > "$power_supply_root/AC/online"
+    check "Walker suspend must succeed" run_suspend
+    grep -qx 'lock --fail-closed' "$suspend_log" \
+      || fail "Walker suspend did not lock"
+    grep -qx 'systemctl suspend-then-hibernate' "$suspend_log" \
+      || fail "Walker suspend did not request suspend-then-hibernate"
+
+    export FAKE_LOCK_FAIL=true
+    if run_suspend --lid; then
+      fail "a failed lock must fail the suspend request"
+    fi
+    if grep -q '^systemctl ' "$suspend_log"; then
+      fail "a failed lock must block sleep"
+    fi
+    unset FAKE_LOCK_FAIL
+
+    rm "$hibernate_marker"
+    check "unsupported-host suspend must succeed" run_suspend
+    grep -qx 'systemctl suspend' "$suspend_log" \
+      || fail "an unsupported host must use plain suspend"
+    if grep -q 'suspend-then-hibernate' "$suspend_log"; then
+      fail "an unsupported host must not request hibernation"
+    fi
 
     touch "$out"
   ''

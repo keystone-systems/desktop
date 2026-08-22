@@ -9,6 +9,7 @@ let
   hyprpolkitagent-src = ./hyprpolkitagent;
   keystone-dpms-wake-src = ./keystone-dpms-wake.nix;
   keystone-lock-src = ./keystone-lock.nix;
+  keystone-suspend-src = ./keystone-suspend.nix;
 in
 final: prev: {
   keystone-desktop = {
@@ -21,6 +22,9 @@ final: prev: {
     };
     keystone-lock = final.callPackage keystone-lock-src {
       hyprlandPkg = hyprland.packages.${final.stdenv.hostPlatform.system}.hyprland;
+    };
+    keystone-suspend = final.callPackage keystone-suspend-src {
+      inherit (final.keystone-desktop) keystone-lock;
     };
   };
 }

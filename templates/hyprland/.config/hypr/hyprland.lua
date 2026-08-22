@@ -143,8 +143,7 @@ for key, command in pairs({
   bind(key, hl.dsp.exec_cmd(command), { locked = true })
 end
 bind("XF86PowerOff", hl.dsp.exec_cmd(app .. "keystone-menu system"), { locked = true })
--- A failed lock requests session termination and deliberately blocks suspend.
-bind("switch:on:Lid Switch", hl.dsp.exec_cmd("keystone-lock --fail-closed && systemctl suspend"), { locked = true })
+bind("switch:on:Lid Switch", hl.dsp.exec_cmd("keystone-suspend --lid"), { locked = true })
 bind("switch:off:Lid Switch", function()
   -- Hyprland 0.56 advises deferring DPMS from key and switch handlers so
   -- the dispatch runs after input processing completes.

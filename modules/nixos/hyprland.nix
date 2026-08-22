@@ -180,6 +180,7 @@ in
       keystone-desktop.hyprpolkitagent
       keystone-desktop.keystone-dpms-wake
       keystone-desktop.keystone-lock
+      keystone-desktop.keystone-suspend
       waybar
       wofi
       mako

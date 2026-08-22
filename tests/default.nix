@@ -75,6 +75,7 @@ let
     "clipse"
     "keystone-dpms-wake"
     "keystone-lock"
+    "keystone-suspend"
   ];
   systemPackageNames = map lib.getName evalHyprland.config.environment.systemPackages;
   missingBinaries = lib.filter (name: !(lib.elem name systemPackageNames)) templateBinaries;

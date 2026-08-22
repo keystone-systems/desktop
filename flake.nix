@@ -117,6 +117,7 @@
         inherit (overlaidPkgs.keystone-desktop)
           keystone-dpms-wake
           keystone-lock
+          keystone-suspend
           write-polkit-theme
           hyprpolkitagent
           ;

@@ -470,9 +470,7 @@ dispatch() {
       "$(keystone_cmd keystone-lock)"
       ;;
     system-suspend)
-      # Leave the system awake when the lock cannot be verified. The helper
-      # requests session teardown, but an unverified teardown is not lock truth.
-      "$(keystone_cmd keystone-lock)" --fail-closed && systemctl suspend
+      "$(keystone_cmd keystone-suspend)"
       ;;
     system-restart)
       systemctl reboot
