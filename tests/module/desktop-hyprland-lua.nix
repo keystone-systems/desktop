@@ -13,6 +13,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
       findutils
       gawk
       gnugrep
+      jq
     ];
   }
   ''
@@ -186,6 +187,21 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         : > "$config_home/themes/current/hyprland.lua"
         verify base
 
+        cat > "$config_home/hypr/host.lua" <<'LUA'
+    hl.monitor({ output = "eDP-1", disabled = true })
+    hl.monitor({
+      output = "DP-1",
+      disabled = false,
+      mode = "preferred",
+      position = "auto-right",
+      scale = 1,
+      transform = 0,
+      mirror = "",
+    })
+    LUA
+        verify "generated monitor rule fields"
+        cp "$templates/hyprland/.config/hypr/host.lua" "$config_home/hypr/host.lua"
+
         for theme_dir in "$templates/themes/.config/themes/"*; do
           theme="$(basename "$theme_dir")"
           if [[ -f "$theme_dir/hyprland.lua" ]]; then
@@ -240,18 +256,148 @@ pkgs.runCommand "test-desktop-hyprland-lua"
           fail "legacy startup or compositor-native exit remains"
         fi
 
-        # Since 0.56 hyprctl evaluates its dispatch argument as Lua, so the
-        # legacy bareword form `hyprctl dispatch dpms off` is a SYNTAX ERROR,
-        # not an unknown dispatcher. Every DPMS call site swallows its error
-        # (`|| log`, `|| (...)`), so nothing surfaced and the panel just
-        # stayed dark. Require the hl.dsp.* form wherever DPMS is dispatched.
-        # Comment lines are prose about this very contract, not invocations.
-        legacy_dispatch="$(grep -RnE "hyprctl dispatch +[a-z]" \
-          "$templates/hyprland/.config/hypr" ${../..}/pkgs \
-          | grep -vE ':[0-9]+:[[:space:]]*#' || true)"
-        if [ -n "$legacy_dispatch" ]; then
-          echo "$legacy_dispatch" >&2
-          fail "hyprctl dispatch must pass Lua (hl.dsp.*), not a legacy bareword"
+        # The monitor menu and DPMS hooks must use the Lua IPC surface. Keep
+        # this guard scoped to the migrated paths. keystone-context.sh remains
+        # outside this migration because its legacy dispatcher set includes
+        # movetoworkspacesilent, which has no direct Lua `silent` equivalent.
+        monitor_menu=${../..}/modules/home/scripts/keystone-monitor-menu.sh
+        legacy_ipc="$(grep -RnE 'hyprctl[[:space:]]+(keyword|dispatch)' \
+          "$monitor_menu" ${../..}/pkgs "$templates" \
+          | grep -vE ':[0-9]+:[[:space:]]*#' \
+          | grep -oE 'hyprctl[[:space:]]+(keyword|dispatch)[^|;&]*' \
+          | grep -vE "^hyprctl[[:space:]]+dispatch[[:space:]]+['\"]?hl\\.dsp\\." || true)"
+        if [ -n "$legacy_ipc" ]; then
+          echo "$legacy_ipc" >&2
+          fail "hyprctl takes Lua — use hl.dsp.* dispatchers and hl.* config tables"
+        fi
+        grep -Fq "hl.monitor({" "$monitor_menu" \
+          || fail "monitor menu must build hl.monitor Lua tables"
+        hyprctl_help="$(${hyprlandPkg}/bin/hyprctl --help 2>&1 || true)"
+        grep -Fq 'eval <code>' <<<"$hyprctl_help" \
+          || fail "pinned hyprctl must expose the Lua eval command"
+
+        # Exercise the live-session path against a fake hyprctl. This must not
+        # connect to the compositor running the build host's desktop session.
+        fake_bin="$TMPDIR/fake-bin"
+        hyprctl_record="$TMPDIR/hyprctl-record"
+        notify_record="$TMPDIR/notify-record"
+        monitors_fixture="$TMPDIR/monitors.json"
+        mkdir -p "$fake_bin"
+        cat > "$monitors_fixture" <<'JSON'
+    [
+      {
+        "name": "eDP-1",
+        "width": 1920,
+        "height": 1080,
+        "refreshRate": 60,
+        "scale": 1,
+        "transform": 0,
+        "x": 0,
+        "y": 0,
+        "mirrorOf": "none",
+        "disabled": false,
+        "availableModes": ["1920x1080@60.00Hz"]
+      },
+      {
+        "name": "DP-1",
+        "width": 2560,
+        "height": 1440,
+        "refreshRate": 60,
+        "scale": 1,
+        "transform": 0,
+        "x": 300,
+        "y": 200,
+        "mirrorOf": "none",
+        "disabled": false,
+        "availableModes": ["2560x1440@60.00Hz"]
+      }
+    ]
+    JSON
+        cat > "$fake_bin/hyprctl" <<'SH'
+    #!${pkgs.bash}/bin/bash
+    set -euo pipefail
+    if [[ "$1" == "-j" && "$2" == "monitors" && "$3" == "all" ]]; then
+      if [[ "''${MONITOR_DISABLED:-0}" == "1" ]]; then
+        jq 'map(if .name == "eDP-1" then .disabled = true | .width = 0 | .height = 0 | .availableModes = [] else . end)' "$MONITORS_FIXTURE"
+      elif [[ "''${MONITOR_MIRRORED:-0}" == "1" ]]; then
+        jq 'map(if .name == "DP-1" then .mirrorOf = "eDP-1" else . end)' "$MONITORS_FIXTURE"
+      else
+        cat "$MONITORS_FIXTURE"
+      fi
+      exit 0
+    fi
+    if [[ "$1" == "eval" ]]; then
+      printf '%s\n' "$2" > "$HYPRCTL_RECORD"
+      if [[ "''${HYPRCTL_FAIL:-0}" == "1" ]]; then
+        printf 'error: rejected monitor rule\n'
+        exit 7
+      fi
+      printf 'ok\n'
+      exit 0
+    fi
+    printf 'unexpected hyprctl invocation: %s\n' "$*" >&2
+    exit 64
+    SH
+        cat > "$fake_bin/notify-send" <<'SH'
+    #!${pkgs.bash}/bin/bash
+    printf '%s\n' "$*" >> "$NOTIFY_RECORD"
+    SH
+        chmod +x "$fake_bin/hyprctl" "$fake_bin/notify-send"
+
+        run_monitor_action() {
+          env \
+            PATH="$fake_bin:$PATH" \
+            MONITORS_FIXTURE="$monitors_fixture" \
+            HYPRCTL_RECORD="$hyprctl_record" \
+            NOTIFY_RECORD="$notify_record" \
+            XDG_RUNTIME_DIR="$runtime_dir" \
+            bash "$monitor_menu" dispatch "$1"
+        }
+
+        : > "$notify_record"
+        run_monitor_action $'apply-scale\teDP-1\t2'
+        grep -Fxq 'hl.monitor({ output = "eDP-1", disabled = false, mode = "1920x1080@60.00", position = "0x0", scale = 2, transform = 0, mirror = "" })' "$hyprctl_record" \
+          || fail "scale action did not eval the expected hl.monitor table"
+        grep -Fq 'Monitor updated eDP-1 scale set to 2x' "$notify_record" \
+          || fail "successful scale action did not notify"
+
+        : > "$notify_record"
+        run_monitor_action $'apply-layout\tDP-1\tright-of\teDP-1'
+        grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "1920x-180", scale = 1, transform = 0, mirror = "" })' "$hyprctl_record" \
+          || fail "relative layout action did not eval the expected hl.monitor table"
+        run_monitor_action $'apply-layout\teDP-1\tbelow\tDP-1'
+        grep -Fxq 'hl.monitor({ output = "eDP-1", disabled = false, mode = "1920x1080@60.00", position = "620x1640", scale = 1, transform = 0, mirror = "" })' "$hyprctl_record" \
+          || fail "relative layout action ignored the target monitor offset"
+
+        run_monitor_action $'apply-layout\tDP-1\tmirror\teDP-1'
+        grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "auto", scale = 1, transform = 0, mirror = "eDP-1" })' "$hyprctl_record" \
+          || fail "mirror action did not set the mirror target"
+        MONITOR_MIRRORED=1 run_monitor_action $'apply-layout\tDP-1\tright-of\teDP-1'
+        grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "1920x-180", scale = 1, transform = 0, mirror = "" })' "$hyprctl_record" \
+          || fail "relative layout action did not clear the mirror target"
+
+        run_monitor_action $'disable\teDP-1'
+        grep -Fxq 'hl.monitor({ output = "eDP-1", disabled = true })' "$hyprctl_record" \
+          || fail "disable action did not eval the disabled monitor table"
+        MONITOR_DISABLED=1 run_monitor_action $'enable\teDP-1'
+        grep -Fxq 'hl.monitor({ output = "eDP-1", disabled = false, mode = "preferred", position = "auto", scale = 1, transform = 0, mirror = "" })' "$hyprctl_record" \
+          || fail "enable action did not explicitly clear the disabled state"
+
+        printf 'not-called\n' > "$hyprctl_record"
+        if run_monitor_action $'apply-orientation\teDP-1\t0 }) error("injected") --'; then
+          fail "invalid monitor transform was accepted"
+        fi
+        grep -Fxq 'not-called' "$hyprctl_record" \
+          || fail "invalid monitor transform reached hyprctl eval"
+
+        : > "$notify_record"
+        if HYPRCTL_FAIL=1 run_monitor_action $'apply-scale\teDP-1\t2'; then
+          fail "rejected monitor rule reported success"
+        fi
+        grep -Fq 'Monitor change failed error: rejected monitor rule' "$notify_record" \
+          || fail "rejected monitor rule did not notify failure"
+        if grep -Fq 'Monitor updated' "$notify_record"; then
+          fail "rejected monitor rule emitted a success notification"
         fi
 
         # Input must be able to rescue a blanked panel. With these off, the

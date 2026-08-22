@@ -200,6 +200,24 @@ logical_dimensions() {
   printf "%s\t%s\n" "$logical_width" "$logical_height"
 }
 
+# Render a connector name from `hyprctl -j monitors` as a Lua string literal.
+lua_string() {
+  local value="$1"
+  value="${value//\\/\\\\}"
+  value="${value//\"/\\\"}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
+  printf '"%s"' "$value"
+}
+
+build_disable_rule() {
+  printf 'hl.monitor({ output = %s, disabled = true })\n' "$(lua_string "$1")"
+}
+
+# Build a monitor rule as an hl.monitor Lua table. hl.monitor validates field
+# names, so the spellings here are exact. scale and transform are numbers in
+# the table, so they are interpolated bare rather than quoted.
 build_monitor_rule() {
   local monitor_name="$1"
   local mode="$2"
@@ -207,25 +225,45 @@ build_monitor_rule() {
   local scale="$4"
   local transform="$5"
   local mirror_target="${6:-none}"
+  local fields
 
-  if [[ "$mode" == "disable" ]]; then
-    printf "%s, disable\n" "$monitor_name"
-    return 0
+  if ! [[ "$scale" =~ ^[0-9]+([.][0-9]+)?$ ]]; then
+    printf "Invalid monitor scale: %s\n" "$scale" >&2
+    return 1
+  fi
+  if ! [[ "$transform" =~ ^[0-7]$ ]]; then
+    printf "Invalid monitor transform: %s\n" "$transform" >&2
+    return 1
   fi
 
-  if [[ -n "$mirror_target" && "$mirror_target" != "none" ]]; then
-    printf "%s, %s, %s, %s, transform, %s, mirror, %s\n" \
-      "$monitor_name" "$mode" "$position" "$scale" "$transform" "$mirror_target"
-    return 0
+  fields="output = $(lua_string "$monitor_name"), disabled = false"
+  fields+=", mode = $(lua_string "$mode")"
+  fields+=", position = $(lua_string "$position")"
+  fields+=", scale = ${scale}"
+  fields+=", transform = ${transform}"
+
+  if [[ "$mirror_target" == "none" ]]; then
+    fields+=", mirror = \"\""
+  else
+    fields+=", mirror = $(lua_string "$mirror_target")"
   fi
 
-  printf "%s, %s, %s, %s, transform, %s\n" \
-    "$monitor_name" "$mode" "$position" "$scale" "$transform"
+  printf 'hl.monitor({ %s })\n' "$fields"
 }
 
 apply_rule() {
   local rule="$1"
-  hyprctl keyword monitor "$rule" >/dev/null
+  local output
+
+  # Hyprland 0.56 replies `error:` for failed evals; hyprctl maps that to exit
+  # status 7, so a rejected rule cannot pass silently.
+  if output=$(hyprctl eval "$rule" 2>&1) && [[ "$output" == "ok" ]]; then
+    return 0
+  fi
+
+  printf "Failed to apply monitor rule: %s\n%s\n" "$rule" "$output" >&2
+  notify -u critical "Monitor change failed" "$output"
+  return 1
 }
 
 apply_scale() {
@@ -363,7 +401,7 @@ apply_enable() {
 
 apply_disable() {
   local monitor_name="$1"
-  apply_rule "$(build_monitor_rule "$monitor_name" "disable" "" "" "" "")"
+  apply_rule "$(build_disable_rule "$monitor_name")"
   notify "Monitor updated" "$monitor_name disabled"
 }
 

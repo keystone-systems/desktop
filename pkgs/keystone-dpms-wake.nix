@@ -30,11 +30,9 @@ writeShellApplication {
       logger -t keystone-dpms-wake -- "$*" || true
     }
 
-    # hyprctl dispatch takes Lua since Hyprland 0.56, so the legacy
-    # `dispatch dpms on` string is a Lua syntax error rather than an unknown
-    # dispatcher. Every call here is `|| log`-guarded, which is precisely how
-    # that breakage stayed invisible across the 0.56 migration: the watchdog
-    # ran, logged a failure nobody read, and recovered nothing.
+    # hyprctl dispatch takes Lua since Hyprland 0.56. These calls are `||
+    # log`-guarded so the watchdog never fails the hypridle hook, which means
+    # malformed Lua only ever shows up in the journal.
     dpms() {
       hyprctl dispatch "hl.dsp.dpms({ action = \"$1\" })" >/dev/null 2>&1 ||
         log "dpms $1 dispatch failed"

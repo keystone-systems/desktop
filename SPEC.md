@@ -150,25 +150,26 @@ Setup → Monitors
 
 #### Implementation Details
 
-Monitor configuration uses `hyprctl keyword monitor` for runtime changes:
+Monitor configuration uses `hyprctl eval` with `hl.monitor({...})` for runtime
+changes:
 
 ```bash
 # Auto Right: External monitor right of laptop (eDP-1)
-hyprctl keyword monitor "HDMI-A-1,preferred,auto-right,1"
+hyprctl eval 'hl.monitor({ output = "HDMI-A-1", disabled = false, mode = "preferred", position = "auto-right", scale = 1, mirror = "" })'
 
 # Auto Left: External monitor left of laptop
-hyprctl keyword monitor "HDMI-A-1,preferred,auto-left,1"
+hyprctl eval 'hl.monitor({ output = "HDMI-A-1", disabled = false, mode = "preferred", position = "auto-left", scale = 1, mirror = "" })'
 
 # Mirror: Clone laptop to external
-hyprctl keyword monitor "HDMI-A-1,preferred,auto,1,mirror,eDP-1"
+hyprctl eval 'hl.monitor({ output = "HDMI-A-1", disabled = false, mode = "preferred", position = "auto", scale = 1, mirror = "eDP-1" })'
 
 # External Only: Disable laptop display
-hyprctl keyword monitor "eDP-1,disabled"
-hyprctl keyword monitor "HDMI-A-1,preferred,auto,1"
+hyprctl eval 'hl.monitor({ output = "eDP-1", disabled = true })'
+hyprctl eval 'hl.monitor({ output = "HDMI-A-1", disabled = false, mode = "preferred", position = "auto", scale = 1, mirror = "" })'
 
 # Laptop Only: Disable external
-hyprctl keyword monitor "HDMI-A-1,disabled"
-hyprctl keyword monitor "eDP-1,preferred,auto,1"
+hyprctl eval 'hl.monitor({ output = "HDMI-A-1", disabled = true })'
+hyprctl eval 'hl.monitor({ output = "eDP-1", disabled = false, mode = "preferred", position = "auto", scale = 1, mirror = "" })'
 ```
 
 #### Auto-Detection
