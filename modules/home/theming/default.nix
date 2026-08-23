@@ -52,14 +52,17 @@ let
         ln -sfn "$theme_path/$background" "$runtime_dir/background"
       fi
 
+      # Home Manager activation may run without a graphical session or GNOME
+      # schemas. dconf.settings above remains authoritative; these calls only
+      # refresh a live session and MUST NOT abort the transactional switch.
       if [ -f "$theme_path/light.mode" ]; then
-        gsettings set org.gnome.desktop.interface color-scheme prefer-light
-        gsettings set org.gnome.desktop.interface gtk-theme Adwaita
+        gsettings set org.gnome.desktop.interface color-scheme prefer-light 2>/dev/null || true
+        gsettings set org.gnome.desktop.interface gtk-theme Adwaita 2>/dev/null || true
       else
-        gsettings set org.gnome.desktop.interface color-scheme prefer-dark
-        gsettings set org.gnome.desktop.interface gtk-theme Adwaita-dark
+        gsettings set org.gnome.desktop.interface color-scheme prefer-dark 2>/dev/null || true
+        gsettings set org.gnome.desktop.interface gtk-theme Adwaita-dark 2>/dev/null || true
       fi
-      gsettings set org.gnome.desktop.interface icon-theme "$(<"$theme_path/icons.theme")"
+      gsettings set org.gnome.desktop.interface icon-theme "$(<"$theme_path/icons.theme")" 2>/dev/null || true
 
       systemctl --user restart hyprpaper.service 2>/dev/null || true
       systemctl --user reload waybar.service 2>/dev/null || true
