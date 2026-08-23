@@ -10,6 +10,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
+    terminal = {
+      url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     # This flake is the single owner of the compositor pin. Tag pin (not main):
     # hyprland main has segfaulted before, and the live fleet runs the tagged
     # release. Consumers can override via `keystone.inputs.desktop.follows`.
@@ -46,6 +51,7 @@
       self,
       nixpkgs,
       home-manager,
+      terminal,
       hyprland,
       hyprpaper,
       walker,
@@ -63,6 +69,8 @@
       # trap when both module trees are active in one HM evaluation).
       desktopInputs = {
         inherit hyprland hyprpaper omarchy;
+        terminalThemeCatalog = terminal.lib.templatesPath + "/themes/.config/themes";
+        terminalThemeNames = terminal.lib.themeNames;
         desktopSelf = self;
       };
 
@@ -71,6 +79,13 @@
         inherit system;
         overlays = [ self.overlays.default ];
       };
+      desktopManifest = map (file: {
+        path = nixpkgs.lib.removePrefix "${toString ./templates}/" (toString file);
+        executable = nixpkgs.lib.hasInfix "/.local/bin/" (toString file);
+      }) (nixpkgs.lib.filesystem.listFilesRecursive ./templates);
+      manifestOverlap = nixpkgs.lib.intersectLists (map (
+        entry: entry.path
+      ) terminal.lib.dotfiles.manifest) (map (entry: entry.path) desktopManifest);
     in
     {
       nixosModules = {
@@ -105,13 +120,17 @@
         # module — a second import anywhere downstream reproduces the
         # `programs.walker.elephant` "already declared" eval error.
         imports = [
+          terminal.homeModules.default
           walker.homeManagerModules.default
           ./modules/home/default.nix
         ];
         _module.args.desktopInputs = desktopInputs;
       };
 
-      overlays.default = import ./pkgs { inherit hyprland; };
+      overlays.default = nixpkgs.lib.composeManyExtensions [
+        terminal.overlays.default
+        (import ./pkgs { inherit hyprland; })
+      ];
 
       packages.${system} = {
         inherit (overlaidPkgs.keystone-desktop)
@@ -122,10 +141,16 @@
           hyprpolkitagent
           ;
 
-        # The template tree as a store path, used by seed-dotfiles.
-        dotfile-templates = pkgs.runCommand "keystone-dotfile-templates" { } ''
-          cp -r ${./templates} $out
-        '';
+        # The composed terminal + desktop tree as one starter set. The two
+        # manifests MUST NOT contain the same file path.
+        dotfile-templates =
+          assert nixpkgs.lib.assertMsg (manifestOverlap == [ ])
+            "terminal and desktop dotfile templates overlap: ${nixpkgs.lib.concatStringsSep ", " manifestOverlap}";
+          pkgs.runCommand "keystone-dotfile-templates" { } ''
+            mkdir -p $out
+            cp -r ${terminal.packages.${system}.dotfile-templates}/. $out/
+            cp -r ${./templates}/. $out/
+          '';
 
         # Seed a user's dotfiles checkout with the template stow packages.
         # Templates are a starter set the user COPIES and then owns — nix
@@ -181,7 +206,13 @@
         };
       };
 
-      lib.templatesPath = ./templates;
+      lib = {
+        templatesPath = ./templates;
+        dotfiles.manifest =
+          assert nixpkgs.lib.assertMsg (manifestOverlap == [ ])
+            "terminal and desktop dotfile templates overlap: ${nixpkgs.lib.concatStringsSep ", " manifestOverlap}";
+          terminal.lib.dotfiles.manifest ++ desktopManifest;
+      };
 
       checks.${system} = import ./tests {
         inherit
@@ -189,6 +220,8 @@
           nixpkgs
           home-manager
           hyprland
+          omarchy
+          terminal
           ;
         inherit system;
       };

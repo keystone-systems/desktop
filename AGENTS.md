@@ -1,6 +1,11 @@
 # ks.systems/desktop — Editing Guide
 
-This repo is the extracted Keystone desktop: Nix owns **binaries, session
+This repo extends `ks.systems/terminal`. It MUST import the terminal Home
+Manager module and compose the terminal overlay. It MUST NOT redeclare the
+terminal option tree or theme selector. A headless host MUST be able to use
+terminal themes without this product.
+
+Nix owns **binaries, session
 wiring (greetd/uwsm/PAM/pipewire/portals), scripts/menus, and theming
 activation**; runtime configuration (hyprland.lua, waybar, wofi, walker
 config, themes) is owned by the **user's dotfiles**, seeded once from
@@ -22,9 +27,9 @@ Formatting is nixfmt everywhere; shell scripts use `writeShellApplication`
 | Path | Contents |
 | --- | --- |
 | `modules/nixos/` | `default.nix` (option surface + DE dispatch), `common.nix` (DE-agnostic), `hyprland.nix` (full), `gnome.nix`/`niri.nix` (stubs) |
-| `modules/home/` | `default.nix` (HM option surface), `hyprland.nix` (session units), `components/`, `scripts/`, `theming/` |
+| `modules/home/` | `default.nix` (HM option surface), `hyprland.nix` (session units), `components/`, `scripts/`, `theming/` (terminal contract extension) |
 | `pkgs/` | overlay: `pkgs.keystone-desktop.{write-polkit-theme,hyprpolkitagent,keystone-dpms-wake}` |
-| `templates/` | user-agnostic stow-layout dotfile starter set (see README seed contract) |
+| `templates/` | user-agnostic graphical Stow starter set; terminal files come from `ks.systems/terminal` |
 | `tests/` | eval/grep checks wired into `checks.x86_64-linux` |
 
 ## NixOS Level (`modules/nixos/`)
@@ -96,7 +101,7 @@ Session wiring only — units, scripts, menus, theming activation. Components:
 | Btop       | `components/btop.nix`       | System monitor (themed)                                 |
 | Ghostty    | `components/ghostty.nix`    | JetBrains Mono Nerd Font, 12pt, 0.95 opacity            |
 | Scripts    | `scripts/`                  | `keystone-*.sh` menus/utilities (shellcheck-enforced)   |
-| Theming    | `theming/`                  | theme activation + `keystone-theme-switch`              |
+| Theming    | `theming/`                  | graphical requirements and post-switch reload hook      |
 
 Keystone-coupled packages are nullable:
 `keystone.desktop.integration.{ksPackage,agenixPackage}` default to
@@ -121,11 +126,12 @@ extension modules.
 
 ## Theming
 
-Themes are owned by the dotfiles repository (seeded from
-`templates/themes/`) and stowed into `~/.config/themes/<name>/`; the active
-theme is symlinked at `~/.config/themes/current/` and switched at runtime via
-`keystone-theme-switch <name>` — no rebuild. Startup `hyprlock` must never
-depend on mutable theme/wallpaper symlinks for password entry.
+Themes are owned by the dotfiles repository. The terminal product seeds and
+validates terminal adapters. This product seeds and validates graphical
+adapters. Their template manifests MUST NOT overlap. The terminal product
+owns `keystone-theme-switch` and `keystone.terminal.theme.name`. This product
+MAY append required paths and post-switch hooks. Startup `hyprlock` MUST NOT
+depend on mutable theme or wallpaper links for password entry.
 
 Available themes: tokyo-night (default), kanagawa, catppuccin,
 catppuccin-latte, ethereal, everforest, flexoki-light, gruvbox, hackerman,

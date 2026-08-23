@@ -14,10 +14,8 @@ in
     ./hyprland.nix
     ./scripts
     ./theming
-    # Terminal is provided by ks.systems/os (keystone.terminal) via
-    # home-manager.sharedModules since 2a9c266. Do not re-import here
-    # to avoid duplicate option declarations when both OS and desktop
-    # modules are active.
+    # The flake wrapper imports ks.systems/terminal before this module.
+    # Desktop extends that product and does not declare terminal options.
   ];
 
   options.keystone.desktop = {
@@ -156,6 +154,10 @@ in
   };
 
   config = mkIf cfg.enable {
+    keystone.terminal = {
+      enable = mkDefault true;
+    };
+
     assertions = [
       {
         assertion = cfg.health.battery.criticalPercent < cfg.health.battery.warningPercent;

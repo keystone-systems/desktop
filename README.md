@@ -1,9 +1,9 @@
 # ks.systems/desktop
 
-The Keystone desktop as a standalone flake: Hyprland session wiring, the
-Keystone menu system, theming activation, and a starter set of dotfile
-templates. Extracted from [ks.systems/os](https://git.ncrmro.com/ks.systems/os)
-(keystone).
+The Keystone desktop extends `ks.systems/terminal` with Hyprland session
+wiring, graphical menus, graphical theme adapters, and graphical starter
+templates. A desktop host always consumes the terminal product. A headless
+host can consume the terminal product without this repository.
 
 **Division of labor**: Nix owns binaries, session wiring
 (greetd/uwsm/PAM/pipewire/portals), scripts/menus, and the templates
@@ -78,6 +78,13 @@ stow -d packages -t ~ hyprland waybar wofi walker themes
 After seeding, the files are yours — edit them freely, commit them to your
 dotfiles repo, and never re-seed unless you want upstream's latest starter
 state.
+
+`ks.systems/terminal` owns the four terminal adapters and the
+`keystone-theme-switch` command. This product appends graphical adapter
+requirements, a filtered Omarchy v3.0.2 base catalog, a sparse Keystone
+graphical catalog, and a graphical reload hook. Every composed desktop theme
+MUST satisfy both contracts. A theme switch affects new Zellij sessions. It
+does not change a running session.
 
 ### The Lua runtime contract
 

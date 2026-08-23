@@ -12,14 +12,23 @@
   nixpkgs,
   home-manager,
   hyprland,
+  omarchy,
+  terminal,
   system,
 }:
 let
-  pkgs = nixpkgs.legacyPackages.${system};
+  pkgs = import nixpkgs {
+    inherit system;
+    overlays = [ self.overlays.default ];
+  };
   lib = nixpkgs.lib;
 
   templates = ../templates;
-
+  terminalTemplatePaths = map (entry: entry.path) terminal.lib.dotfiles.manifest;
+  desktopTemplatePaths = map (file: lib.removePrefix "${toString templates}/" (toString file)) (
+    lib.filesystem.listFilesRecursive templates
+  );
+  templateOverlap = lib.intersectLists terminalTemplatePaths desktopTemplatePaths;
   # Minimal headless consumer eval, one per desktop environment. Imports the
   # home-manager NixOS module because nixosModules.default sets
   # home-manager.sharedModules (standalone consumers carry home-manager
@@ -132,10 +141,10 @@ let
         exit 1
       '';
 
-  # Standalone home-manager eval against VANILLA nixpkgs — no keystone
-  # overlay, so pkgs.keystone.* does not exist. Proves the integration
-  # options (ksPackage/agenixPackage) are null-tolerant and nothing else in
-  # the HM tree reaches for keystone-owned packages. Forcing every
+  # Standalone home-manager eval with the public desktop overlay. It includes
+  # the terminal overlay, but it does not include the ks.systems/os overlay.
+  # This proves that the integration options (ksPackage/agenixPackage) are
+  # null-tolerant. Forcing every
   # home.packages name and user unit instantiates the full surface without
   # building anything.
   homeStandalone = home-manager.lib.homeManagerConfiguration {
@@ -146,11 +155,13 @@ let
         home.username = "testuser";
         home.homeDirectory = "/home/testuser";
         home.stateVersion = "25.05";
+        keystone.terminal.git.enable = false;
         keystone.desktop.enable = true;
       }
     ];
   };
   homeStandalonePackageNames = map lib.getName homeStandalone.config.home.packages;
+  themeCatalogNames = map (catalog: catalog.name) homeStandalone.config.keystone.terminal.theme.catalogs;
   homeStandaloneUnits = lib.attrNames homeStandalone.config.systemd.user.services;
   startupLockUnit = homeStandalone.config.systemd.user.services.keystone-startup-lock;
   persistentGraphicalServices = [
@@ -219,6 +230,7 @@ let
     "keystone-desktop-config"
     "keystone-detach"
     "keystone-disk-monitor"
+    "keystone-ensure-paths"
     "keystone-fingerprint-menu"
     "keystone-idle-toggle"
     "keystone-launch-walker"
@@ -238,8 +250,11 @@ let
     "keystone-setup-menu"
     "keystone-share-picker"
     "keystone-startup-lock"
+    "keystone-sync-agent-assets"
     "keystone-theme-switch"
     "keystone-wifi-menu"
+    "keystone-zellij-new-tab-prompt"
+    "keystone-zide"
   ];
 
   # Commands whose runtimeInputs contain cfg.integration.{ks,agenix}Package.
@@ -270,6 +285,7 @@ let
         home.username = "testuser";
         home.homeDirectory = "/home/testuser";
         home.stateVersion = "25.05";
+        keystone.terminal.git.enable = false;
         keystone.desktop = {
           enable = true;
           environment = "hyprland";
@@ -357,6 +373,60 @@ in
           exit 1
         fi
         echo "PASS: templates are free of personal literals"
+        touch "$out"
+      '';
+
+  theme-graphical-contract =
+    pkgs.runCommand "theme-graphical-contract"
+      {
+        nativeBuildInputs = [ pkgs.findutils ];
+      }
+      ''
+        themes=${templates}/themes/.config/themes
+        expected="${lib.concatStringsSep " " terminal.lib.themeNames}"
+        catalogs="${lib.concatStringsSep " " themeCatalogNames}"
+
+        test "$catalogs" = "terminal omarchy desktop" || {
+          echo "FAIL: effective theme catalog order is '$catalogs'" >&2
+          exit 1
+        }
+
+        for theme in $expected; do
+          for path in hyprland.lua waybar.css mako.ini swayosd.css walker.css \
+            hyprlock.conf chromium.theme ghostty.conf icons.theme backgrounds; do
+            test -e "$themes/$theme/$path" || test -e "${omarchy}/themes/$theme/$path" || {
+              echo "FAIL: $theme does not contain $path" >&2
+              exit 1
+            }
+          done
+          for path in zellij.kdl helix.toml btop.theme lazygit.yml; do
+            test ! -e "$themes/$theme/$path" || {
+              echo "FAIL: desktop still owns terminal adapter $theme/$path" >&2
+              exit 1
+            }
+          done
+        done
+
+        actual="$(find "$themes" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tr '\n' ' ' | sed 's/ $//')"
+        expected_sorted="$(printf '%s\n' $expected | sort | tr '\n' ' ' | sed 's/ $//')"
+        test "$actual" = "$expected_sorted" || {
+          echo "FAIL: theme set is '$actual'; expected '$expected_sorted'" >&2
+          exit 1
+        }
+
+        touch "$out"
+      '';
+
+  template-non-overlap =
+    pkgs.runCommand "template-non-overlap"
+      {
+        overlap = lib.concatStringsSep " " templateOverlap;
+      }
+      ''
+        if [ -n "$overlap" ]; then
+          echo "FAIL: terminal and desktop templates overlap: $overlap" >&2
+          exit 1
+        fi
         touch "$out"
       '';
 

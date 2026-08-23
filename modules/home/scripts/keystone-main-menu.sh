@@ -29,19 +29,8 @@ detach() {
 }
 
 current_theme_name() {
-  local current_theme_dir="${XDG_CONFIG_HOME:-$HOME/.config}/themes/current"
-
-  if [[ -L "$current_theme_dir" ]]; then
-    basename "$(readlink -f "$current_theme_dir")"
-    return 0
-  fi
-
-  if [[ -d "$current_theme_dir" ]]; then
-    basename "$current_theme_dir"
-    return 0
-  fi
-
-  printf "unknown\n"
+  "$(keystone_cmd keystone-theme-switch)" --list --json \
+    | jq -r '[.themes[] | select(.current)][0].name // "unknown"'
 }
 
 blocked_entry_json() {
@@ -280,20 +269,9 @@ style_json() {
 }
 
 theme_json() {
-  local themes_dir="${XDG_CONFIG_HOME:-$HOME/.config}/themes"
-  local current_theme
-  current_theme=$(current_theme_name)
-
-  if [[ ! -d "$themes_dir" ]]; then
-    blocked_entry_json "No themes found" "Themes directory not found at ${themes_dir}."
-    return 0
-  fi
-
-  find "$themes_dir" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' \
-    | sort \
-    | jq -R -s --arg current_theme "$current_theme" '
-        split("\n")
-        | map(select(length > 0))
+  "$(keystone_cmd keystone-theme-switch)" --list --json \
+    | jq '
+        .themes
         | if length == 0 then
             [
               {
@@ -304,9 +282,9 @@ theme_json() {
             ]
           else
             map({
-              Text: .,
-              Subtext: (if . == $current_theme then "current theme" else "switch theme" end),
-              Value: ("theme-select\t" + .),
+              Text: .name,
+              Subtext: (if .current then "current theme" else "switch theme" end),
+              Value: ("theme-select\t" + .name),
               Icon: "preferences-desktop-theme-symbolic"
             })
           end
