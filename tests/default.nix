@@ -161,7 +161,24 @@ let
     ];
   };
   homeStandalonePackageNames = map lib.getName homeStandalone.config.home.packages;
-  themeCatalogNames = map (catalog: catalog.name) homeStandalone.config.keystone.terminal.theme.catalogs;
+  themeCatalogNames = map (
+    catalog: catalog.name
+  ) homeStandalone.config.keystone.terminal.theme.catalogs;
+  themeAdapters = homeStandalone.config.keystone.terminal.theme.adapters;
+  terminalAdapterSources = [
+    "zellij.kdl"
+    "helix.toml"
+    "btop.theme"
+    "lazygit.yml"
+    "."
+  ];
+  graphicalAdapterSources = lib.subtractLists terminalAdapterSources (
+    map (adapter: adapter.source) themeAdapters
+  );
+  graphicalContractPaths = lib.unique (
+    homeStandalone.config.keystone.terminal.theme.requiredPaths ++ graphicalAdapterSources
+  );
+  makoAdapters = lib.filter (adapter: adapter.source == "mako.ini") themeAdapters;
   homeStandaloneUnits = lib.attrNames homeStandalone.config.systemd.user.services;
   startupLockUnit = homeStandalone.config.systemd.user.services.keystone-startup-lock;
   persistentGraphicalServices = [
@@ -392,8 +409,7 @@ in
         }
 
         for theme in $expected; do
-          for path in hyprland.lua waybar.css mako.ini swayosd.css walker.css \
-            hyprlock.conf chromium.theme ghostty.conf icons.theme backgrounds; do
+          for path in ${lib.concatStringsSep " " graphicalContractPaths}; do
             test -e "$themes/$theme/$path" || test -e "${omarchy}/themes/$theme/$path" || {
               echo "FAIL: $theme does not contain $path" >&2
               exit 1
@@ -414,6 +430,37 @@ in
           exit 1
         }
 
+        touch "$out"
+      '';
+
+  theme-adapter-transaction =
+    pkgs.runCommand "theme-adapter-transaction"
+      {
+        nativeBuildInputs = [ pkgs.keystone-terminal.theme-selector ];
+        makoTarget = if makoAdapters == [ ] then "" else (builtins.head makoAdapters).target;
+      }
+      ''
+        test "$makoTarget" = /home/testuser/.config/mako/config
+
+        root="$TMPDIR/theme-adapter"
+        mkdir -p "$root/catalog/first" "$root/catalog/second" "$root/config/mako" "$root/hook/bin"
+        printf first > "$root/catalog/first/mako.ini"
+        printf second > "$root/catalog/second/mako.ini"
+        printf '%s\n' '#!${pkgs.runtimeShell}' '[ "$1" != second ]' > "$root/hook/bin/keystone-theme-hook"
+        chmod +x "$root/hook/bin/keystone-theme-hook"
+
+        export KEYSTONE_STATE_HOME="$root/state"
+        export KEYSTONE_THEME_CATALOGS="$(printf 'desktop\t%s' "$root/catalog")"
+        export KEYSTONE_THEME_ADAPTERS="$(printf 'mako.ini\t%s' "$root/config/mako/config")"
+        export KEYSTONE_THEME_REQUIRED_PATHS=""
+        keystone-theme-selector select first
+        before="$(readlink -f "$root/config/mako/config")"
+        if KEYSTONE_THEME_HOOKS="$root/hook" keystone-theme-selector select second; then
+          echo "FAIL: accepted the failing graphical hook" >&2
+          exit 1
+        fi
+        test "$(readlink -f "$root/config/mako/config")" = "$before"
+        test "$(cat "$root/config/mako/config")" = first
         touch "$out"
       '';
 

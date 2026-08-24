@@ -79,13 +79,11 @@
         inherit system;
         overlays = [ self.overlays.default ];
       };
-      desktopManifest = map (file: {
-        path = nixpkgs.lib.removePrefix "${toString ./templates}/" (toString file);
-        executable = nixpkgs.lib.hasInfix "/.local/bin/" (toString file);
-      }) (nixpkgs.lib.filesystem.listFilesRecursive ./templates);
+      desktopManifest = terminal.lib.dotfiles.manifestFrom ./templates;
       manifestOverlap = nixpkgs.lib.intersectLists (map (
         entry: entry.path
       ) terminal.lib.dotfiles.manifest) (map (entry: entry.path) desktopManifest);
+      manifestOverlapMessage = "terminal and desktop dotfile templates overlap: ${nixpkgs.lib.concatStringsSep ", " manifestOverlap}";
     in
     {
       nixosModules = {
@@ -144,8 +142,7 @@
         # The composed terminal + desktop tree as one starter set. The two
         # manifests MUST NOT contain the same file path.
         dotfile-templates =
-          assert nixpkgs.lib.assertMsg (manifestOverlap == [ ])
-            "terminal and desktop dotfile templates overlap: ${nixpkgs.lib.concatStringsSep ", " manifestOverlap}";
+          assert nixpkgs.lib.assertMsg (manifestOverlap == [ ]) manifestOverlapMessage;
           pkgs.runCommand "keystone-dotfile-templates" { } ''
             mkdir -p $out
             cp -r ${terminal.packages.${system}.dotfile-templates}/. $out/
@@ -209,8 +206,7 @@
       lib = {
         templatesPath = ./templates;
         dotfiles.manifest =
-          assert nixpkgs.lib.assertMsg (manifestOverlap == [ ])
-            "terminal and desktop dotfile templates overlap: ${nixpkgs.lib.concatStringsSep ", " manifestOverlap}";
+          assert nixpkgs.lib.assertMsg (manifestOverlap == [ ]) manifestOverlapMessage;
           terminal.lib.dotfiles.manifest ++ desktopManifest;
       };
 

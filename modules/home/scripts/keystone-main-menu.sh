@@ -29,8 +29,7 @@ detach() {
 }
 
 current_theme_name() {
-  "$(keystone_cmd keystone-theme-switch)" --list --json \
-    | jq -r '[.themes[] | select(.current)][0].name // "unknown"'
+  "$(keystone_cmd keystone-theme-switch)" --current 2>/dev/null || printf 'unknown\n'
 }
 
 blocked_entry_json() {

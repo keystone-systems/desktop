@@ -26,9 +26,7 @@ let
     name = "keystone-theme-hook";
     runtimeInputs = [
       pkgs.coreutils
-      pkgs.findutils
       pkgs.glib
-      pkgs.jq
       pkgs.libnotify
       pkgs.procps
       pkgs.systemd
@@ -42,10 +40,9 @@ let
       theme_path="$2"
       config_home="${config.xdg.configHome}"
       runtime_dir="$config_home/keystone/current"
-      mkdir -p "$runtime_dir" "$config_home/mako"
+      mkdir -p "$runtime_dir"
 
       ${writePolkitTheme} "$theme_path" "$runtime_dir/polkit.json"
-      ln -sfn "$theme_path/mako.ini" "$config_home/mako/config"
 
       background="$(${pkgs.jq}/bin/jq -r '.background // empty' "$theme_path/.keystone-theme.json")"
       if [ -n "$background" ] && [ -f "$theme_path/$background" ]; then
@@ -94,13 +91,18 @@ in
       }
       {
         name = "desktop";
-        path = ../../.. + "/templates/themes/.config/themes";
+        path = desktopInputs.desktopSelf.lib.templatesPath + "/themes/.config/themes";
+      }
+    ];
+    keystone.terminal.theme.adapters = lib.mkAfter [
+      {
+        source = "mako.ini";
+        target = "${config.xdg.configHome}/mako/config";
       }
     ];
     keystone.terminal.theme.requiredPaths = lib.mkAfter [
       "hyprland.lua"
       "waybar.css"
-      "mako.ini"
       "swayosd.css"
       "walker.css"
       "hyprlock.conf"
