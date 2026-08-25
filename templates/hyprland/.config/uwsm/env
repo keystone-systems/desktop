@@ -14,4 +14,4 @@ export XDG_DATA_DIRS="${XDG_DATA_DIRS:-$HOME/.local/share:/usr/local/share:/usr/
 export PATH="$HOME/.local/bin:$PATH"
 export XCOMPOSEFILE="$HOME/.XCompose"
 export EDITOR=hx
-export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/ssh-agent"
+export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/gcr/ssh"

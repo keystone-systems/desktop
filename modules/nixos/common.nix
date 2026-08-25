@@ -73,12 +73,12 @@ in
     # verified startup lock password.
     services.gnome.gnome-keyring.enable = mkDefault true;
 
-    # Keystone owns SSH agent selection and YubiKey integration. Enabling
-    # GNOME Keyring must not silently install GCR as a competing SSH agent.
-    # mkForce, not mkDefault: nixpkgs' GNOME desktop-manager module also
-    # defines this as `mkDefault true`, so a mkDefault here is a same-priority
-    # conflict that fails eval outright on `environment = "gnome"`.
-    services.gnome.gcr-ssh-agent.enable = mkForce false;
+    # GCR is the only SSH agent on Keystone desktops. The startup Hyprlock PAM
+    # service unlocks GNOME Keyring, which then supplies the passphrase GCR
+    # needs for the user's software SSH key. mkForce is intentional: nixpkgs'
+    # GNOME desktop-manager module also defines this option as mkDefault true,
+    # and the desktop product owns this invariant in every environment.
+    services.gnome.gcr-ssh-agent.enable = mkForce true;
 
     # Keep the login keyring password synchronized with account password
     # changes made through passwd.

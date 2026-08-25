@@ -61,6 +61,18 @@ let
   evalGnome = mkEval "gnome";
   evalNiri = mkEval "niri";
 
+  # GCR must be the SSH agent in every environment. Forcing the GNOME eval
+  # matters on its own: nixpkgs' GNOME desktop-manager defines this option
+  # itself, so a same-priority definition here would be an eval error that only
+  # the gnome branch reaches.
+  gcrDisabledEnvironments = lib.attrNames (
+    lib.filterAttrs (_: eval: !eval.config.services.gnome.gcr-ssh-agent.enable) {
+      hyprland = evalHyprland;
+      gnome = evalGnome;
+      niri = evalNiri;
+    }
+  );
+
   # Every binary the templates invoke by bare name (hyprland.lua binds,
   # hypridle.conf hooks, and waybar on-click handlers). These MUST be
   # OS-level packages — the stowed configs run outside any HM wrapper PATH.
@@ -141,25 +153,43 @@ let
         exit 1
       '';
 
-  # Standalone home-manager eval with the public desktop overlay. It includes
-  # the terminal overlay, but it does not include the ks.systems/os overlay.
-  # This proves that the integration options (ksPackage/agenixPackage) are
-  # null-tolerant. Forcing every
-  # home.packages name and user unit instantiates the full surface without
-  # building anything.
-  homeStandalone = home-manager.lib.homeManagerConfiguration {
-    inherit pkgs;
-    modules = [
-      self.homeModules.default
-      {
-        home.username = "testuser";
-        home.homeDirectory = "/home/testuser";
-        home.stateVersion = "25.05";
-        keystone.terminal.git.enable = false;
-        keystone.desktop.enable = true;
-      }
-    ];
+  # Standalone home-manager eval with the public desktop overlay, one per
+  # consumer scenario.
+  mkHomeConfig =
+    module:
+    home-manager.lib.homeManagerConfiguration {
+      inherit pkgs;
+      modules = [
+        self.homeModules.default
+        {
+          home.username = "testuser";
+          home.homeDirectory = "/home/testuser";
+          home.stateVersion = "25.05";
+        }
+        module
+      ];
+    };
+
+  # Includes the terminal overlay, but not the ks.systems/os overlay. This
+  # proves that the integration options (ksPackage/agenixPackage) are
+  # null-tolerant. Forcing every home.packages name and user unit instantiates
+  # the full surface without building anything.
+  homeStandalone = mkHomeConfig {
+    keystone.terminal.git.enable = false;
+    keystone.desktop.enable = true;
   };
+  homeSshAgentEnabled = homeStandalone.config.services.ssh-agent.enable;
+  homeSshAuthSock = homeStandalone.config.keystone.terminal.ssh.authSock;
+  # A desktop must refuse terminal SSH auto-load outright: it would start a
+  # second agent against a second passphrase store. Matched on the message so
+  # an unrelated assertion failure cannot make this pass vacuously.
+  homeSshAutoLoadConflict = mkHomeConfig {
+    keystone.desktop.enable = true;
+    keystone.terminal.sshAutoLoad.enable = true;
+  };
+  sshAutoLoadConflictRejected = lib.any (
+    a: !a.assertion && lib.hasInfix "sshAutoLoad" a.message
+  ) homeSshAutoLoadConflict.config.assertions;
   homeStandalonePackageNames = map lib.getName homeStandalone.config.home.packages;
   themeCatalogNames = map (
     catalog: catalog.name
@@ -294,34 +324,25 @@ let
   # Full-surface HM eval for the stow-collision check: every option that can
   # contribute files is switched on (integration packages are stand-ins just
   # to un-gate the ks/agenix-dependent scripts and menus).
-  homeFull = home-manager.lib.homeManagerConfiguration {
-    inherit pkgs;
-    modules = [
-      self.homeModules.default
-      {
-        home.username = "testuser";
-        home.homeDirectory = "/home/testuser";
-        home.stateVersion = "25.05";
-        keystone.terminal.git.enable = false;
-        keystone.desktop = {
-          enable = true;
-          environment = "hyprland";
-          browser = "chromium";
-          uhk.enable = true;
-          photos.enable = true;
-          agents.enable = true;
-          audio.defaults = {
-            sink = "test-sink";
-            source = "test-source";
-          };
-          printer.default = "test-printer";
-          integration = {
-            ksPackage = pkgs.hello;
-            agenixPackage = pkgs.hello;
-          };
-        };
-      }
-    ];
+  homeFull = mkHomeConfig {
+    keystone.terminal.git.enable = false;
+    keystone.desktop = {
+      enable = true;
+      environment = "hyprland";
+      browser = "chromium";
+      uhk.enable = true;
+      photos.enable = true;
+      agents.enable = true;
+      audio.defaults = {
+        sink = "test-sink";
+        source = "test-source";
+      };
+      printer.default = "test-printer";
+      integration = {
+        ksPackage = pkgs.hello;
+        agenixPackage = pkgs.hello;
+      };
+    };
   };
   configuredDefaultServices = {
     audio = homeFull.config.systemd.user.services.keystone-audio-defaults;
@@ -655,11 +676,24 @@ in
       {
         nativeBuildInputs = [ pkgs.gnugrep ];
         keyringEnabled = lib.boolToString evalHyprland.config.services.gnome.gnome-keyring.enable;
-        gcrSshAgentEnabled = lib.boolToString evalHyprland.config.services.gnome.gcr-ssh-agent.enable;
-        # Forces the GNOME eval too: nixpkgs' GNOME desktop-manager defines
-        # this option itself, so a same-priority definition here is an eval
-        # error that only the gnome branch reaches.
-        gcrSshAgentEnabledGnome = lib.boolToString evalGnome.config.services.gnome.gcr-ssh-agent.enable;
+        gcrDisabled = lib.concatStringsSep " " gcrDisabledEnvironments;
+        openSshAgentEnabled = lib.boolToString homeSshAgentEnabled;
+        sshAuthSock = homeSshAuthSock;
+        sshAutoLoadRejected = lib.boolToString sshAutoLoadConflictRejected;
+        nixosCompatSocketPresent = lib.boolToString (
+          builtins.hasAttr "gcr-ssh-agent-compat.socket" evalHyprland.config.systemd.user.units
+        );
+        nixosCompatServicePresent = lib.boolToString (
+          builtins.hasAttr "gcr-ssh-agent-compat.service" evalHyprland.config.systemd.user.units
+        );
+        homeCompatSocketPresent = lib.boolToString (
+          builtins.hasAttr "gcr-ssh-agent-compat" homeStandalone.config.systemd.user.sockets
+        );
+        homeCompatServicePresent = lib.boolToString (
+          builtins.hasAttr "gcr-ssh-agent-compat" homeStandalone.config.systemd.user.services
+        );
+        gcrSocket = "${evalHyprland.config.services.gnome.gcr-ssh-agent.package}/share/systemd/user/gcr-ssh-agent.socket";
+        uwsmEnv = "${templates}/hyprland/.config/uwsm/env";
         lockText = evalHyprland.pkgs.keystone-desktop.keystone-lock.text;
         expectedExport = "export KEYSTONE_LOCK_STARTUP_CONFIG=${evalHyprland.pkgs.keystone-desktop.keystone-lock.startupConfig}";
         greetdPam = greetdPamText;
@@ -681,19 +715,33 @@ in
         # require/refute: assert a pattern is present in / absent from a file.
         require() { grep -Eq "$2" "$3" || { echo "FAIL: $1" >&2; exit 1; }; }
         refute() { grep -Eq "$2" "$3" && { echo "FAIL: $1" >&2; exit 1; }; :; }
+        # expect: assert an eval-time value matches.
+        expect() { [ "$2" = "$3" ] || { echo "FAIL: $1" >&2; exit 1; }; }
 
-        if [ "$keyringEnabled" != true ]; then
-          echo "FAIL: GNOME Keyring is not enabled for the desktop" >&2
+        expect "GNOME Keyring is not enabled for the desktop" "$keyringEnabled" true
+        if [ -n "$gcrDisabled" ]; then
+          echo "FAIL: GCR is not the SSH agent on these desktop environments: $gcrDisabled" >&2
           exit 1
         fi
-        if [ "$gcrSshAgentEnabled" != false ]; then
-          echo "FAIL: GCR replaced Keystone's SSH agent" >&2
+        expect "the Home Manager OpenSSH agent is enabled" "$openSshAgentEnabled" false
+        expect "desktop services do not use the canonical GCR socket" "$sshAuthSock" '%t/gcr/ssh'
+        expect "desktop configuration accepts terminal SSH auto-load" "$sshAutoLoadRejected" true
+        expect "the NixOS legacy compatibility socket still exists" "$nixosCompatSocketPresent" false
+        expect "the NixOS legacy compatibility service still exists" "$nixosCompatServicePresent" false
+        expect "the Home Manager legacy compatibility socket still exists" "$homeCompatSocketPresent" false
+        expect "the Home Manager legacy compatibility service still exists" "$homeCompatServicePresent" false
+
+        if grep -R -nE '%t/ssh[-]agent' ${../modules} ${../templates}; then
+          echo "FAIL: desktop modules or templates still reference the legacy SSH-agent socket" >&2
           exit 1
         fi
-        if [ "$gcrSshAgentEnabledGnome" != false ]; then
-          echo "FAIL: GCR replaced Keystone's SSH agent on the GNOME desktop" >&2
-          exit 1
-        fi
+
+        require "the GCR vendor socket lacks its canonical listener" \
+          '^ListenStream=%t/gcr/ssh$' "$gcrSocket"
+        require "the GCR vendor socket does not export its canonical path" \
+          'SSH_AUTH_SOCK=%t/gcr/ssh' "$gcrSocket"
+        require "the UWSM template does not export the canonical GCR socket" \
+          '^export SSH_AUTH_SOCK="\$XDG_RUNTIME_DIR/gcr/ssh"$' "$uwsmEnv"
 
         # The packaged binary MUST own the startup config: an ambient
         # KEYSTONE_LOCK_STARTUP_CONFIG may never select the boot lock's

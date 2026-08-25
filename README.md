@@ -125,9 +125,10 @@ The required `keystone-startup-lock.service` starts after
 graphical services cannot start until Hyprland exposes an observable session
 lock. That first Hyprlock uses the account password to create or unlock GNOME
 Keyring. Later locks MAY use the fingerprint support from the user's mutable
-Hyprlock configuration. GCR's SSH agent stays disabled because Keystone owns
-SSH agent and YubiKey integration. See
-`conventions/os.hyprland-autostart.md`.
+Hyprlock configuration. GCR is the sole desktop SSH agent and listens on
+`$XDG_RUNTIME_DIR/gcr/ssh`; the desktop product disables Home Manager's
+OpenSSH agent and rejects terminal SSH auto-load. Headless terminal hosts keep
+their separate OpenSSH-agent policy. See `conventions/os.hyprland-autostart.md`.
 
 ## Pinning / overriding the desktop version
 

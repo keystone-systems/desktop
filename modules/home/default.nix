@@ -156,6 +156,7 @@ in
   config = mkIf cfg.enable {
     keystone.terminal = {
       enable = mkDefault true;
+      ssh.authSock = mkDefault "%t/gcr/ssh";
     };
 
     assertions = [
@@ -171,7 +172,15 @@ in
         assertion = lib.hasPrefix "/" cfg.health.disk.path;
         message = "keystone.desktop.health.disk.path must be an absolute path";
       }
+      {
+        assertion = !config.keystone.terminal.sshAutoLoad.enable;
+        message = "A Keystone desktop cannot enable keystone.terminal.sshAutoLoad; GCR is the only SSH agent for desktop users.";
+      }
     ];
+
+    # A terminal-only host may use Home Manager's OpenSSH agent. Desktops use
+    # GCR exclusively so GNOME Keyring is the only passphrase store.
+    services.ssh-agent.enable = mkForce false;
 
     # UHK Agent copies firmware docs from the Nix store into ~/.config/uhk-agent.
     # Those source files are read-only, and the app preserves that mode, which

@@ -9,7 +9,6 @@
     ./launcher.nix
     ./mako.nix
     ./screenshot.nix
-    ./ssh-agent.nix
     ./swayosd.nix
   ];
 
