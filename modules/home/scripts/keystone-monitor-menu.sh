@@ -266,6 +266,52 @@ apply_rule() {
   return 1
 }
 
+verify_layout() {
+  local monitor_name="$1"
+  local relation="$2"
+  local target_name="$3"
+  local source target source_dims target_dims
+  local source_x source_y source_width source_height
+  local target_x target_y target_width target_height
+
+  source=$(require_monitor_json "$monitor_name")
+  target=$(require_monitor_json "$target_name")
+
+  if [[ "$relation" == "mirror" ]]; then
+    [[ "$(jq -r '.mirrorOf // "none"' <<<"$source")" == "$target_name" ]]
+    return
+  fi
+
+  source_x=$(jq -r '.x // 0' <<<"$source")
+  source_y=$(jq -r '.y // 0' <<<"$source")
+  target_x=$(jq -r '.x // 0' <<<"$target")
+  target_y=$(jq -r '.y // 0' <<<"$target")
+  source_dims=$(logical_dimensions "$monitor_name")
+  target_dims=$(logical_dimensions "$target_name")
+  read -r source_width source_height < <(tr '\t' ' ' <<<"$source_dims")
+  read -r target_width target_height < <(tr '\t' ' ' <<<"$target_dims")
+
+  case "$relation" in
+    left-of)
+      ((source_x + source_width == target_x)) \
+        && ((2 * source_y + source_height == 2 * target_y + target_height))
+      ;;
+    right-of)
+      ((source_x == target_x + target_width)) \
+        && ((2 * source_y + source_height == 2 * target_y + target_height))
+      ;;
+    above)
+      ((source_y + source_height == target_y)) \
+        && ((2 * source_x + source_width == 2 * target_x + target_width))
+      ;;
+    below)
+      ((source_y == target_y + target_height)) \
+        && ((2 * source_x + source_width == 2 * target_x + target_width))
+      ;;
+    *) return 1 ;;
+  esac
+}
+
 apply_scale() {
   local monitor_name="$1"
   local scale="$2"
@@ -363,7 +409,7 @@ apply_layout() {
   local monitor_name="$1"
   local relation="$2"
   local target_name="$3"
-  local rule position mirror_target
+  local rule target_rule position mirror_target
 
   if [[ "$relation" == "mirror" ]]; then
     mirror_target="$target_name"
@@ -381,7 +427,24 @@ apply_layout() {
     "$(current_transform "$monitor_name")" \
     "$mirror_target")
 
-  apply_rule "$rule"
+  # Re-declare the target first with an explicit position so it remains the
+  # anchor. A lone dependent rule can trigger an existing `auto` rule and make
+  # the displays touch only at a corner after Hyprland normalizes the layout.
+  target_rule=$(build_monitor_rule \
+    "$target_name" \
+    "$(current_mode "$target_name")" \
+    "$(current_position "$target_name")" \
+    "$(current_scale "$target_name")" \
+    "$(current_transform "$target_name")" \
+    "$(current_mirror_target "$target_name")")
+
+  apply_rule "${target_rule}
+${rule}"
+
+  if ! verify_layout "$monitor_name" "$relation" "$target_name"; then
+    notify -u critical "Monitor layout failed" "$monitor_name is not $relation $target_name after Hyprland applied the rules"
+    return 1
+  fi
 
   if [[ "$relation" == "mirror" ]]; then
     notify "Monitor updated" "$monitor_name now mirrors $target_name"
@@ -405,83 +468,54 @@ apply_disable() {
   notify "Monitor updated" "$monitor_name disabled"
 }
 
-monitor_settings_json() {
+monitor_rules_lua() {
   while IFS= read -r monitor_name; do
     [[ -z "$monitor_name" ]] && continue
 
-    local monitor stable_name mirror_target width height refresh scale transform pos_x pos_y
+    local monitor stable_name mirror_target mode scale transform position
     monitor=$(require_monitor_json "$monitor_name")
     stable_name=$(stable_monitor_id "$monitor_name")
     mirror_target=$(jq -r '.mirrorOf // "none"' <<<"$monitor")
-    width=$(jq -r '.width // 0' <<<"$monitor")
-    height=$(jq -r '.height // 0' <<<"$monitor")
-    refresh=$(jq -r '.refreshRate // 60' <<<"$monitor")
+    mode=$(current_mode "$monitor_name")
     scale=$(jq -r '.scale // 1' <<<"$monitor")
     transform=$(jq -r '.transform // 0' <<<"$monitor")
-    pos_x=$(jq -r '.x // 0' <<<"$monitor")
-    pos_y=$(jq -r '.y // 0' <<<"$monitor")
+    position=$(current_position "$monitor_name")
 
     if [[ "$mirror_target" != "none" ]]; then
-      printf "%s, %sx%s@%s, auto, %s, transform, %s, mirror, %s\n" \
-        "$stable_name" \
-        "$width" \
-        "$height" \
-        "$(refresh_string "$refresh")" \
-        "$scale" \
-        "$transform" \
-        "$(stable_monitor_id "$mirror_target")"
-    else
-      printf "%s, %sx%s@%s, %sx%s, %s, transform, %s\n" \
-        "$stable_name" \
-        "$width" \
-        "$height" \
-        "$(refresh_string "$refresh")" \
-        "$pos_x" \
-        "$pos_y" \
-        "$scale" \
-        "$transform"
+      mirror_target=$(stable_monitor_id "$mirror_target")
     fi
-  done < <(monitors_json | jq -r '.[] | select((.disabled // false) | not) | .name')
-}
 
-primary_display() {
-  monitors_json | jq -r '
-    (
-      map(select(((.disabled // false) | not) and (.mirrorOf // "none") == "none" and (.focused // false)))
-      | first
-    )
-    // (
-      map(select(((.disabled // false) | not) and (.mirrorOf // "none") == "none"))
-      | first
-    )
-    // (first // {})
-    | .name // "eDP-1"
-  '
+    build_monitor_rule "$stable_name" "$mode" "$position" "$scale" "$transform" "$mirror_target"
+  done < <(
+    monitors_json \
+      | jq -r '[.[] | select((.disabled // false) | not)] | sort_by((.name | startswith("eDP-") | not), .name) | .[].name'
+  )
 }
 
 config_snippet() {
-  local primary
-  primary=$(primary_display)
-
-  printf '  keystone.desktop.monitors = {\n'
-  printf '    primaryDisplay = "%s";\n' "$(stable_monitor_id "$primary")"
-  printf '    autoMirror = false;\n'
-  printf '    settings = [\n'
-
-  while IFS= read -r line; do
-    [[ -z "$line" ]] && continue
-    printf '      "%s"\n' "$line"
-  done < <(monitor_settings_json)
-
-  printf '    ];\n'
-  printf '  };\n'
+  printf '%s\n' '-- Generated by keystone-monitor-menu from the connected, enabled displays.'
+  printf '%s\n' '-- Re-run “Save connected layout” after changing scale, orientation, or placement.'
+  monitor_rules_lua
 }
 
 save_monitor_defaults() {
-  local target_file=""
-  target_file=$(keystone-desktop-config home-manager-host-file)
-  config_snippet | keystone-desktop-config write-desktop-state-section "monitors"
-  notify "Saved monitor defaults" "Updated ${target_file}"
+  local config_file="${KEYSTONE_HYPRLAND_MONITORS_FILE:-$HOME/.config/hypr/monitors.lua}"
+  local target_file temp_file
+
+  if [[ ! -e "$config_file" ]]; then
+    printf "Monitor configuration does not exist: %s\n" "$config_file" >&2
+    notify -u critical "Monitor layout not saved" "$config_file does not exist; re-stow the Hyprland package first"
+    return 1
+  fi
+
+  target_file=$(readlink -f "$config_file")
+  temp_file=$(mktemp "${target_file}.tmp.XXXXXX")
+  trap 'rm -f "${temp_file:-}"' RETURN
+  config_snippet >"$temp_file"
+  chmod --reference="$target_file" "$temp_file"
+  mv "$temp_file" "$target_file"
+  trap - RETURN
+  notify "Saved monitor defaults" "Updated ${config_file}"
 }
 
 open_menu() {
@@ -563,8 +597,8 @@ cmd_monitor_actions_json() {
           PreviewType: "command"
         },
         {
-          Text: "Save current layout",
-          Subtext: "Write the current monitor state into nixos-config",
+          Text: "Save connected layout",
+          Subtext: "Write connected displays into the Stow-owned Hyprland monitor file",
           Value: ("save-layout\t" + $monitor),
           Preview: ($monitor_menu + " preview-action " + ($monitor | @sh) + " " + ("save-layout" | @sh)),
           PreviewType: "command"
@@ -616,8 +650,8 @@ cmd_monitor_actions_json() {
         PreviewType: "command"
       },
       {
-        Text: "Save current layout",
-        Subtext: "Write the current monitor state into nixos-config",
+        Text: "Save connected layout",
+        Subtext: "Write connected displays into the Stow-owned Hyprland monitor file",
         Value: ("save-layout\t" + $monitor),
         Preview: ($monitor_menu + " preview-action " + ($monitor | @sh) + " " + ("save-layout" | @sh)),
         PreviewType: "command"
@@ -751,7 +785,7 @@ cmd_preview_monitor() {
         ),
         "",
         "Save for this host",
-        "Selecting save writes this monitor state into the current host home-manager file in nixos-config.",
+        "Selecting save writes all connected, enabled displays into ~/.config/hypr/monitors.lua.",
         "",
         "Current declarative snippet:",
         $snippet
@@ -766,7 +800,7 @@ cmd_preview_setup() {
     return 0
   fi
 
-  printf "Connected monitors: %s\n\nSelect a monitor to change scale, resolution, orientation, or layout.\nSaving writes the current layout into nixos-config.\n" \
+  printf "Connected monitors: %s\n\nSelect a monitor to change scale, resolution, orientation, or layout.\nSaving writes connected displays into ~/.config/hypr/monitors.lua.\n" \
     "$(monitors_json_raw | jq 'length')"
 }
 
@@ -798,8 +832,8 @@ cmd_preview_action() {
       printf "Re-enable %s with its preferred mode.\n" "$monitor_name"
       ;;
     save-layout)
-      printf "Save the current monitor layout for this host.\n\nThis writes the current monitor state into the managed desktop block in:\n%s\n\nCurrent snippet:\n%s\n" \
-        "$(keystone-desktop-config home-manager-host-file)" \
+      printf "Save the connected monitor layout for this host.\n\nThis updates the Stow-owned monitor overlay at:\n%s\n\nConnected-layout snapshot:\n%s\n" \
+        "${KEYSTONE_HYPRLAND_MONITORS_FILE:-$HOME/.config/hypr/monitors.lua}" \
         "$(config_snippet)"
       ;;
     *)

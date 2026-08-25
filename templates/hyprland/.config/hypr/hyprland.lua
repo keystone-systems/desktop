@@ -196,4 +196,5 @@ end
 
 load_active_theme()
 load_overlay("user")
+load_overlay("monitors")
 load_overlay("host")

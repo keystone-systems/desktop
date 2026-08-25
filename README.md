@@ -97,15 +97,17 @@ base settings first. It then loads the active theme with an absolute
 local chunk = loadfile(os.getenv("HOME") .. "/.config/themes/current/hyprland.lua")
 if chunk then pcall(chunk) end
 pcall(require, "user") -- identity and personal rules
-pcall(require, "host") -- monitors and host setup
+pcall(require, "monitors") -- Walker-managed monitor rules
+pcall(require, "host") -- remaining host setup
 ```
 
-Edit these two files first:
+Edit these files first:
 
 - **`user.lua`** — personal binds, window rules, and compositor-local startup actions. Same on
   every machine.
-- **`host.lua`** — monitor layout (`hl.monitor({...})` calls), default audio
-  sink/source, default printer. One per machine — keep a
+- **`monitors.lua`** — monitor layout (`hl.monitor({...})` calls), also updated
+  by Walker's **Save connected layout** action.
+- **`host.lua`** — other compositor-local machine settings. Keep a
   `hyprland-<hostname>` stow package per host and stow the right one.
 
 Both modules load last, so they can override the base and theme settings. A

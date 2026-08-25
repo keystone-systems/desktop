@@ -280,6 +280,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         # connect to the compositor running the build host's desktop session.
         fake_bin="$TMPDIR/fake-bin"
         hyprctl_record="$TMPDIR/hyprctl-record"
+        hyprctl_applied="$TMPDIR/hyprctl-applied"
         notify_record="$TMPDIR/notify-record"
         monitors_fixture="$TMPDIR/monitors.json"
         mkdir -p "$fake_bin"
@@ -287,6 +288,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
     [
       {
         "name": "eDP-1",
+        "description": "BOE Internal Panel",
         "width": 1920,
         "height": 1080,
         "refreshRate": 60,
@@ -300,6 +302,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
       },
       {
         "name": "DP-1",
+        "description": "LG External Display",
         "width": 2560,
         "height": 1440,
         "refreshRate": 60,
@@ -317,7 +320,9 @@ pkgs.runCommand "test-desktop-hyprland-lua"
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
     if [[ "$1" == "-j" && "$2" == "monitors" && "$3" == "all" ]]; then
-      if [[ "''${MONITOR_DISABLED:-0}" == "1" ]]; then
+      if [[ -e "$HYPRCTL_APPLIED" && -n "''${HYPRCTL_AFTER_FIXTURE:-}" ]]; then
+        cat "$HYPRCTL_AFTER_FIXTURE"
+      elif [[ "''${MONITOR_DISABLED:-0}" == "1" ]]; then
         jq 'map(if .name == "eDP-1" then .disabled = true | .width = 0 | .height = 0 | .availableModes = [] else . end)' "$MONITORS_FIXTURE"
       elif [[ "''${MONITOR_MIRRORED:-0}" == "1" ]]; then
         jq 'map(if .name == "DP-1" then .mirrorOf = "eDP-1" else . end)' "$MONITORS_FIXTURE"
@@ -328,6 +333,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
     fi
     if [[ "$1" == "eval" ]]; then
       printf '%s\n' "$2" > "$HYPRCTL_RECORD"
+      touch "$HYPRCTL_APPLIED"
       if [[ "''${HYPRCTL_FAIL:-0}" == "1" ]]; then
         printf 'error: rejected monitor rule\n'
         exit 7
@@ -349,6 +355,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
             PATH="$fake_bin:$PATH" \
             MONITORS_FIXTURE="$monitors_fixture" \
             HYPRCTL_RECORD="$hyprctl_record" \
+            HYPRCTL_APPLIED="$hyprctl_applied" \
             NOTIFY_RECORD="$notify_record" \
             XDG_RUNTIME_DIR="$runtime_dir" \
             bash "$monitor_menu" dispatch "$1"
@@ -361,20 +368,54 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         grep -Fq 'Monitor updated eDP-1 scale set to 2x' "$notify_record" \
           || fail "successful scale action did not notify"
 
+        right_fixture="$TMPDIR/monitors-right.json"
+        below_fixture="$TMPDIR/monitors-below.json"
+        mirror_fixture="$TMPDIR/monitors-mirror.json"
+        jq 'map(if .name == "DP-1" then .x = 1920 | .y = -180 else . end)' \
+          "$monitors_fixture" > "$right_fixture"
+        jq 'map(if .name == "eDP-1" then .x = 620 | .y = 1640 else . end)' \
+          "$monitors_fixture" > "$below_fixture"
+        jq 'map(if .name == "DP-1" then .mirrorOf = "eDP-1" else . end)' \
+          "$monitors_fixture" > "$mirror_fixture"
+
         : > "$notify_record"
-        run_monitor_action $'apply-layout\tDP-1\tright-of\teDP-1'
-        grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "1920x-180", scale = 1, transform = 0, mirror = "" })' "$hyprctl_record" \
-          || fail "relative layout action did not eval the expected hl.monitor table"
-        run_monitor_action $'apply-layout\teDP-1\tbelow\tDP-1'
-        grep -Fxq 'hl.monitor({ output = "eDP-1", disabled = false, mode = "1920x1080@60.00", position = "620x1640", scale = 1, transform = 0, mirror = "" })' "$hyprctl_record" \
+        rm -f "$hyprctl_applied"
+        HYPRCTL_AFTER_FIXTURE="$right_fixture" run_monitor_action $'apply-layout\tDP-1\tright-of\teDP-1'
+        sed -n '1p' "$hyprctl_record" \
+          | grep -Fxq 'hl.monitor({ output = "eDP-1", disabled = false, mode = "1920x1080@60.00", position = "0x0", scale = 1, transform = 0, mirror = "" })' \
+          || fail "relative layout action did not declare the target anchor first"
+        sed -n '2p' "$hyprctl_record" \
+          | grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "1920x-180", scale = 1, transform = 0, mirror = "" })' \
+          || fail "relative layout action did not declare the dependent monitor second"
+
+        rm -f "$hyprctl_applied"
+        HYPRCTL_AFTER_FIXTURE="$below_fixture" run_monitor_action $'apply-layout\teDP-1\tbelow\tDP-1'
+        sed -n '1p' "$hyprctl_record" \
+          | grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "300x200", scale = 1, transform = 0, mirror = "" })' \
+          || fail "relative layout action did not preserve the target monitor offset"
+        sed -n '2p' "$hyprctl_record" \
+          | grep -Fxq 'hl.monitor({ output = "eDP-1", disabled = false, mode = "1920x1080@60.00", position = "620x1640", scale = 1, transform = 0, mirror = "" })' \
           || fail "relative layout action ignored the target monitor offset"
 
-        run_monitor_action $'apply-layout\tDP-1\tmirror\teDP-1'
-        grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "auto", scale = 1, transform = 0, mirror = "eDP-1" })' "$hyprctl_record" \
+        rm -f "$hyprctl_applied"
+        HYPRCTL_AFTER_FIXTURE="$mirror_fixture" run_monitor_action $'apply-layout\tDP-1\tmirror\teDP-1'
+        sed -n '2p' "$hyprctl_record" \
+          | grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "auto", scale = 1, transform = 0, mirror = "eDP-1" })' \
           || fail "mirror action did not set the mirror target"
-        MONITOR_MIRRORED=1 run_monitor_action $'apply-layout\tDP-1\tright-of\teDP-1'
-        grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "1920x-180", scale = 1, transform = 0, mirror = "" })' "$hyprctl_record" \
+
+        rm -f "$hyprctl_applied"
+        MONITOR_MIRRORED=1 HYPRCTL_AFTER_FIXTURE="$right_fixture" run_monitor_action $'apply-layout\tDP-1\tright-of\teDP-1'
+        sed -n '2p' "$hyprctl_record" \
+          | grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "1920x-180", scale = 1, transform = 0, mirror = "" })' \
           || fail "relative layout action did not clear the mirror target"
+
+        rm -f "$hyprctl_applied"
+        : > "$notify_record"
+        if HYPRCTL_AFTER_FIXTURE="$monitors_fixture" run_monitor_action $'apply-layout\tDP-1\tright-of\teDP-1'; then
+          fail "corner-touching layout reported success"
+        fi
+        grep -Fq 'Monitor layout failed' "$notify_record" \
+          || fail "invalid post-apply geometry did not notify failure"
 
         run_monitor_action $'disable\teDP-1'
         grep -Fxq 'hl.monitor({ output = "eDP-1", disabled = true })' "$hyprctl_record" \
@@ -399,6 +440,26 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         if grep -Fq 'Monitor updated' "$notify_record"; then
           fail "rejected monitor rule emitted a success notification"
         fi
+
+        saved_monitors="$TMPDIR/saved-monitors.lua"
+        monitors_link="$TMPDIR/monitors.lua"
+        : > "$saved_monitors"
+        ln -s "$saved_monitors" "$monitors_link"
+        : > "$notify_record"
+        KEYSTONE_HYPRLAND_MONITORS_FILE="$monitors_link" run_monitor_action $'save-layout\teDP-1'
+        [[ -L "$monitors_link" ]] \
+          || fail "saving a Stow-owned monitor file replaced its symlink"
+        grep -Fq 'output = "desc:BOE Internal Panel"' "$saved_monitors" \
+          || fail "saved layout did not use the internal panel description"
+        grep -Fq 'output = "desc:LG External Display"' "$saved_monitors" \
+          || fail "saved layout did not use the external display description"
+        [[ "$(grep -n 'output = ' "$saved_monitors" | sed -n '1p')" == *'desc:BOE Internal Panel'* ]] \
+          || fail "saved layout did not declare the internal anchor first"
+        if grep -Fq 'keystone.desktop.monitors' "$saved_monitors"; then
+          fail "saved layout still emits the retired Nix monitor option"
+        fi
+        grep -Fq "Saved monitor defaults Updated $monitors_link" "$notify_record" \
+          || fail "saved layout did not report the Stow-owned destination"
 
         # Input must be able to rescue a blanked panel. With these off, the
         # only routes back from DPMS off are hypridle's on-resume hook and the

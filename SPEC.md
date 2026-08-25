@@ -139,13 +139,11 @@ the same env-var gating used for the Photos and Agents surfaces.
 The Monitor setup menu provides runtime display configuration for laptops with external monitors.
 
 ```
-Setup → Monitors
-├── Auto Left      → External monitor to the left of laptop
-├── Auto Right     → External monitor to the right of laptop
-├── Mirror         → Clone laptop display to external monitor
-├── External Only  → Disable laptop, use external only
-├── Laptop Only    → Disable external, use laptop only
-└── Detect         → Re-detect connected monitors
+Setup → Monitors → Display
+├── Scale / Resolution / Orientation
+├── Layout         → Left, right, above, below, or mirror another display
+├── Disable
+└── Save connected layout
 ```
 
 #### Monitor Modes
@@ -202,9 +200,10 @@ hyprctl monitors -j | jq '.[] | {name, description, make, model}'
 
 #### Persistence
 
-Monitor configurations are runtime-only by default. For persistent
-configurations, add `hl.monitor({...})` calls to `~/.config/hypr/host.lua` in your
-dotfiles (prefer `desc:`-matching over connector names).
+Monitor changes are runtime-only until **Save connected layout** writes the
+connected, enabled displays as `hl.monitor({...})` calls in the Stow-owned
+`~/.config/hypr/monitors.lua`. Saved rules prefer `desc:` matching over
+connector names and declare the internal panel first when present.
 
 ### Menu Keybinding
 
