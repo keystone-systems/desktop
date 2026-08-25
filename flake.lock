@@ -1102,11 +1102,11 @@
         "nixpkgs-x86-darwin": "nixpkgs-x86-darwin"
       },
       "locked": {
-        "lastModified": 1787577045,
-        "narHash": "sha256-X/+tBm7Tz6lloUddcCC+I5J+HvZCrlOqtUmPsw74NHw=",
+        "lastModified": 1787624385,
+        "narHash": "sha256-EpInpPtSGfVN7J+sQAfLGy58B1DIT292Jeaxu4CDY64=",
         "ref": "refs/heads/main",
-        "rev": "2d8c4c0bc7b308a7673fc1de94310515785d3a8e",
-        "revCount": 5,
+        "rev": "54272eea602fe2f2da376b24e3125d090ec337cf",
+        "revCount": 8,
         "type": "git",
         "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git"
       },

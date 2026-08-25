@@ -21,6 +21,13 @@
   home-manager,
 }:
 let
+  themeSwitch = pkgs.writeShellScriptBin "keystone-theme-switch" ''
+    case "$*" in
+      "--current") printf '%s\n' tokyo-night ;;
+      "--backgrounds --json") printf '%s\n' '{"theme":"tokyo-night","backgrounds":[{"path":"backgrounds/one.jpg","current":true},{"path":"backgrounds/two.jpg","current":false}]}' ;;
+      *) exit 2 ;;
+    esac
+  '';
   mkHome =
     {
       photos,
@@ -172,6 +179,21 @@ pkgs.runCommand "desktop-main-menu-entries"
     errors=0
 
     ${lib.concatStringsSep "\n" (map mkCell cells)}
+
+    echo "-- Style background submenu --"
+    command="${
+      commandOf "style" (mkHome {
+        photos = false;
+        agents = false;
+        ks = false;
+      }) "keystone-main-menu"
+    }"
+    style="$(env -i HOME="$HOME" PATH="${themeSwitch}/bin" "$command" style-json)"
+    test "$(printf '%s' "$style" | ${pkgs.jq}/bin/jq -r '.[1].SubMenu')" = keystone-background
+    test "$(printf '%s' "$style" | ${pkgs.jq}/bin/jq -r '.[1].Value')" = background
+    backgrounds="$(env -i HOME="$HOME" PATH="${themeSwitch}/bin" "$command" background-json)"
+    test "$(printf '%s' "$backgrounds" | ${pkgs.jq}/bin/jq -r '[.[].Text] | join(",")')" = one.jpg,two.jpg
+    test "$(printf '%s' "$backgrounds" | ${pkgs.jq}/bin/jq -r '.[0].Value')" = $'background-select\tbackgrounds/one.jpg'
 
     if [ "$errors" -gt 0 ]; then
       echo "FAIL: $errors main-menu matrix cell(s) wrong" >&2

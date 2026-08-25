@@ -259,12 +259,36 @@ style_json() {
       },
       {
         Text: "Background",
-        Subtext: "Not implemented yet",
-        Value: "blocked\tBackground\tBackground switching is not implemented yet.",
-        Icon: "image-x-generic-symbolic"
+        Subtext: "Choose a wallpaper for the current theme",
+        Value: "background",
+        Icon: "image-x-generic-symbolic",
+        SubMenu: "keystone-background"
       }
     ]
   '
+}
+
+background_json() {
+  "$(keystone_cmd keystone-theme-switch)" --backgrounds --json \
+    | jq '
+        .backgrounds
+        | if length == 0 then
+            [
+              {
+                Text: "No wallpapers found",
+                Subtext: "The current theme does not provide any wallpapers",
+                Value: "blocked\tBackground\tNo wallpapers were found for the current theme."
+              }
+            ]
+          else
+            map({
+              Text: (.path | sub("^backgrounds/"; "")),
+              Subtext: (if .current then "current wallpaper" else "set wallpaper" end),
+              Value: ("background-select\t" + .path),
+              Icon: "image-x-generic-symbolic"
+            })
+          end
+      '
 }
 
 theme_json() {
@@ -366,6 +390,10 @@ open_menu() {
       menu_id="menus:keystone-theme"
       prompt="Theme"
       ;;
+    background)
+      menu_id="menus:keystone-background"
+      prompt="Background"
+      ;;
     setup)
       menu_id="menus:keystone-setup"
       prompt="Setup"
@@ -391,7 +419,7 @@ dispatch() {
   IFS=$'\t' read -r action arg1 arg2 <<<"$payload"
 
   case "$action" in
-    learn | capture | screenshot | toggle | style | theme | setup | system | agents)
+    learn | capture | screenshot | toggle | style | theme | background | setup | system | agents)
       ;;
     open-apps)
       detach walker
@@ -442,6 +470,9 @@ dispatch() {
       ;;
     theme-select)
       detach "$(keystone_cmd keystone-theme-switch)" "$arg1"
+      ;;
+    background-select)
+      detach "$(keystone_cmd keystone-theme-switch)" --background "$arg1"
       ;;
     system-lock)
       "$(keystone_cmd keystone-lock)"
@@ -498,6 +529,10 @@ case "${1:-}" in
     shift
     theme_json "$@"
     ;;
+  background-json)
+    shift
+    background_json "$@"
+    ;;
   system-json)
     shift
     system_json "$@"
@@ -511,7 +546,7 @@ case "${1:-}" in
     dispatch "$@"
     ;;
   *)
-    echo "Usage: keystone-main-menu {open-menu|main-json|learn-json|capture-json|screenshot-json|toggle-json|style-json|theme-json|system-json|preview-blocked|dispatch} ..." >&2
+    echo "Usage: keystone-main-menu {open-menu|main-json|learn-json|capture-json|screenshot-json|toggle-json|style-json|theme-json|background-json|system-json|preview-blocked|dispatch} ..." >&2
     exit 1
     ;;
 esac

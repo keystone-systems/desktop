@@ -115,6 +115,8 @@ Main Menu
 ├── Capture       → Screenshot and screen recording
 ├── Toggle        → Quick toggles (idle, nightlight, waybar)
 ├── Style         → Theme and wallpaper selection
+│   ├── Theme     → Select a composed theme
+│   └── Background → Select a wallpaper from the current composed theme
 ├── Setup         → System configuration
 │   ├── Audio     → Audio device selection
 │   ├── Wifi      → Network configuration
