@@ -6,6 +6,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
       coreutils
       gnugrep
       jq
+      util-linux
     ];
   }
   ''
@@ -27,7 +28,10 @@ pkgs.runCommand "test-desktop-lock-recovery"
     terminate_log="$test_root/terminate.log"
     query_count_file="$test_root/query-count"
     suspend_log="$test_root/suspend.log"
-    power_supply_root="$test_root/power-supply"
+    docked_state="$test_root/docked"
+    lid_state="$test_root/lid-closed"
+    lid_query_count="$test_root/lid-query-count"
+    lock_child_pid_file="$test_root/lock-child.pid"
     hibernate_marker="$test_root/suspend-then-hibernate"
     mkdir -p "$fake_bin"
     : > "$stale_pid_file"
@@ -36,9 +40,10 @@ pkgs.runCommand "test-desktop-lock-recovery"
     : > "$terminate_log"
     printf '0\n' > "$query_count_file"
     : > "$suspend_log"
-    mkdir -p "$power_supply_root/AC"
-    printf 'Mains\n' > "$power_supply_root/AC/type"
-    printf '0\n' > "$power_supply_root/AC/online"
+    printf 'false\n' > "$docked_state"
+    printf 'true\n' > "$lid_state"
+    printf '0\n' > "$lid_query_count"
+    : > "$lock_child_pid_file"
 
     cat > "$fake_bin/loginctl" <<'EOF'
     #!${pkgs.bash}/bin/bash
@@ -337,8 +342,11 @@ pkgs.runCommand "test-desktop-lock-recovery"
     fi
     check "hypridle must lock through keystone-lock" \
       grep -q '^  lock_cmd=keystone-lock$' "$hypridle_conf"
-    check "hypridle must fail closed before sleep" \
-      grep -q '^  before_sleep_cmd=keystone-lock --fail-closed$' "$hypridle_conf"
+    check "hypridle must use an ordinary lock before sleep" \
+      grep -q '^  before_sleep_cmd=keystone-lock$' "$hypridle_conf"
+    if grep -q -- '--fail-closed' "$hypridle_conf"; then
+      fail "runtime hypridle hooks must never terminate the visible session"
+    fi
     check "the idle listener must lock through keystone-lock" \
       grep -q '^  on-timeout=keystone-lock$' "$hypridle_conf"
     check "the lid must use the suspend policy helper" \
@@ -351,48 +359,158 @@ pkgs.runCommand "test-desktop-lock-recovery"
     cat > "$fake_bin/keystone-lock" <<'EOF'
     #!${pkgs.bash}/bin/bash
     printf 'lock %s\n' "$*" >> "$FAKE_SUSPEND_LOG"
+    if [[ "''${FAKE_LOCK_BACKGROUND_CHILD:-false}" == "true" ]]; then
+      sleep 30 &
+      printf '%s\n' "$!" > "$FAKE_LOCK_CHILD_PID_FILE"
+    fi
     [[ "''${FAKE_LOCK_FAIL:-false}" != "true" ]]
     EOF
     cat > "$fake_bin/systemctl" <<'EOF'
     #!${pkgs.bash}/bin/bash
     printf 'systemctl %s\n' "$*" >> "$FAKE_SUSPEND_LOG"
     EOF
-    chmod +x "$fake_bin/keystone-lock" "$fake_bin/systemctl"
+    cat > "$fake_bin/busctl" <<'EOF'
+    #!${pkgs.bash}/bin/bash
+    property="$6"
+    if [[ "$property" == "Docked" ]]; then
+      [[ "''${FAKE_DOCK_LOOKUP_FAIL:-false}" != "true" ]] || exit 1
+      cat "$FAKE_DOCKED_STATE"
+    elif [[ "$property" == "LidClosed" ]]; then
+      count=$(( $(cat "$FAKE_LID_QUERY_COUNT") + 1 ))
+      printf '%s\n' "$count" > "$FAKE_LID_QUERY_COUNT"
+      [[ "''${FAKE_LID_FAIL_ON_QUERY:-0}" -ne "$count" ]] || exit 1
+      cat "$FAKE_LID_STATE"
+    else
+      exit 1
+    fi
+    EOF
+    chmod +x "$fake_bin/keystone-lock" "$fake_bin/systemctl" "$fake_bin/busctl"
     export FAKE_SUSPEND_LOG="$suspend_log"
-    export KEYSTONE_POWER_SUPPLY_ROOT="$power_supply_root"
+    export FAKE_DOCKED_STATE="$docked_state"
+    export FAKE_LID_STATE="$lid_state"
+    export FAKE_LID_QUERY_COUNT="$lid_query_count"
+    export FAKE_LOCK_CHILD_PID_FILE="$lock_child_pid_file"
     export KEYSTONE_SUSPEND_THEN_HIBERNATE_MARKER="$hibernate_marker"
+    export KEYSTONE_LID_POLL_INTERVAL_SECONDS=0.05
+    export XDG_RUNTIME_DIR="$test_root/runtime"
+    mkdir -p "$XDG_RUNTIME_DIR"
 
     run_suspend() {
       : > "$suspend_log"
+      printf '0\n' > "$lid_query_count"
       ${pkgs.bash}/bin/bash "$suspend_script" "$@"
     }
 
+    wait_for_lid_lock() {
+      local lock_file="$XDG_RUNTIME_DIR/keystone-suspend-lid.lock"
+      local attempt
+
+      for attempt in {1..100}; do
+        if [[ -e "$lock_file" ]] && ! flock --nonblock "$lock_file" true; then
+          return 0
+        fi
+        sleep 0.01
+      done
+      fail "timed out waiting for lid waiter to hold the singleton lock"
+    }
+
     touch "$hibernate_marker"
-    printf '0\n' > "$power_supply_root/AC/online"
-    check "battery lid close must succeed" run_suspend --lid
-    grep -qx 'lock --fail-closed' "$suspend_log" \
-      || fail "battery lid close did not lock"
+    # Battery and AC use the same session-owned undocked policy.
+    check "battery/AC undocked lid close must succeed" run_suspend --lid
+    grep -qx 'lock ' "$suspend_log" || fail "lid close did not use an ordinary lock"
     grep -qx 'systemctl suspend-then-hibernate' "$suspend_log" \
-      || fail "battery lid close did not request suspend-then-hibernate"
+      || fail "undocked lid close did not sleep using the marker"
 
-    printf '1\n' > "$power_supply_root/AC/online"
-    check "AC lid close must succeed" run_suspend --lid
-    check "AC lid close must not lock or sleep" test ! -s "$suspend_log"
+    # A closed, docked lid waits; undocking while still closed then locks and sleeps.
+    : > "$suspend_log"
+    printf 'true\n' > "$docked_state"
+    printf 'true\n' > "$lid_state"
+    ${pkgs.bash}/bin/bash "$suspend_script" --lid &
+    waiter_pid=$!
+    wait_for_lid_lock
+    check "docked lid close must wait awake" test ! -s "$suspend_log"
+    printf 'false\n' > "$docked_state"
+    wait "$waiter_pid" || fail "undock-while-closed waiter failed"
+    grep -qx 'lock ' "$suspend_log" || fail "undocking while closed did not lock"
+    grep -qx 'systemctl suspend-then-hibernate' "$suspend_log" \
+      || fail "undocking while closed did not sleep"
 
-    printf '0\n' > "$power_supply_root/AC/online"
+    # Opening the lid while docked cancels the pending sleep.
+    : > "$suspend_log"
+    printf 'true\n' > "$docked_state"
+    printf 'true\n' > "$lid_state"
+    ${pkgs.bash}/bin/bash "$suspend_script" --lid &
+    waiter_pid=$!
+    wait_for_lid_lock
+    printf 'false\n' > "$lid_state"
+    wait "$waiter_pid" || fail "opening lid while waiting failed"
+    check "opening lid while waiting must stay awake" test ! -s "$suspend_log"
+
+    printf 'true\n' > "$lid_state"
+    printf 'false\n' > "$docked_state"
+    export FAKE_DOCK_LOOKUP_FAIL=true
+    check "failed dock lookup must succeed after locking" run_suspend --lid
+    grep -qx 'lock ' "$suspend_log" \
+      || fail "failed dock lookup did not lock defensively"
+    grep -qx 'systemctl suspend-then-hibernate' "$suspend_log" \
+      || fail "failed dock lookup did not follow the undocked policy"
+    unset FAKE_DOCK_LOOKUP_FAIL
+
+    # If the final lid verification is unreadable, remain awake after locking.
+    export FAKE_LID_FAIL_ON_QUERY=2
+    check "unreadable final lid state must exit awake" run_suspend --lid
+    grep -qx 'lock ' "$suspend_log" || fail "final-lid case did not lock first"
+    if grep -q '^systemctl ' "$suspend_log"; then
+      fail "unreadable final lid state invoked systemctl"
+    fi
+    unset FAKE_LID_FAIL_ON_QUERY
+
+    # Duplicate switch events share one nonblocking waiter and one sleep.
+    : > "$suspend_log"
+    printf '0\n' > "$lid_query_count"
+    printf 'true\n' > "$docked_state"
+    ${pkgs.bash}/bin/bash "$suspend_script" --lid &
+    waiter_pid=$!
+    wait_for_lid_lock
+    ${pkgs.bash}/bin/bash "$suspend_script" --lid \
+      || fail "duplicate lid event did not exit successfully"
+    printf 'false\n' > "$docked_state"
+    wait "$waiter_pid" || fail "singleton lid waiter failed"
+    [[ "$(grep -c '^lock ' "$suspend_log")" -eq 1 ]] \
+      || fail "duplicate lid events produced more than one lock"
+    [[ "$(grep -c '^systemctl ' "$suspend_log")" -eq 1 ]] \
+      || fail "duplicate lid events produced more than one sleep"
+
+    # A lock implementation may leave a long-lived child behind. The child
+    # must not inherit the lid singleton after keystone-suspend exits.
+    : > "$suspend_log"
+    printf 'false\n' > "$docked_state"
+    export FAKE_LOCK_BACKGROUND_CHILD=true
+    ${pkgs.bash}/bin/bash "$suspend_script" --lid \
+      || fail "lid suspend with a background lock child failed"
+    unset FAKE_LOCK_BACKGROUND_CHILD
+    lock_child_pid="$(cat "$lock_child_pid_file")"
+    check "fake lock child must remain alive" kill -0 "$lock_child_pid"
+    ${pkgs.bash}/bin/bash "$suspend_script" --lid \
+      || fail "later lid invocation failed"
+    [[ "$(grep -c '^systemctl ' "$suspend_log")" -eq 2 ]] \
+      || fail "long-lived lock child retained the lid singleton"
+    kill "$lock_child_pid" 2>/dev/null || true
+
     check "Walker suspend must succeed" run_suspend
-    grep -qx 'lock --fail-closed' "$suspend_log" \
-      || fail "Walker suspend did not lock"
+    grep -qx 'lock ' "$suspend_log" || fail "manual suspend did not use an ordinary lock"
     grep -qx 'systemctl suspend-then-hibernate' "$suspend_log" \
-      || fail "Walker suspend did not request suspend-then-hibernate"
+      || fail "manual suspend did not select suspend-then-hibernate"
 
     export FAKE_LOCK_FAIL=true
+    : > "$terminate_log"
     if run_suspend --lid; then
       fail "a failed lock must fail the suspend request"
     fi
     if grep -q '^systemctl ' "$suspend_log"; then
       fail "a failed lock must block sleep"
     fi
+    check "runtime lock failure must not terminate the session" test ! -s "$terminate_log"
     unset FAKE_LOCK_FAIL
 
     rm "$hibernate_marker"

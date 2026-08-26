@@ -321,9 +321,10 @@ hooks.
 - A Nix-owned security wrapper MUST declare each runtime dependency. The
   wrapper MUST invoke each dependency through an absolute Nix store path.
 - A desktop-owned sleep path MUST NOT request suspend or hibernate before the
-  lock becomes observable. If an external sleep request has already started,
-  a failed lock check MUST request session teardown before the hook releases
-  its sleep inhibitor.
+  lock becomes observable. Manual suspend and Hypridle runtime hooks MUST use
+  ordinary `keystone-lock`; if that runtime lock fails, the graphical session
+  MUST remain awake and running. Fail-closed session teardown is reserved for
+  the bounded startup authentication gate.
 - NixOS and Home Manager SHOULD NOT own different parts of the same security
   unit. If both layers modify one unit, a test MUST verify the final merged
   unit and its complete execution environment.
@@ -346,7 +347,7 @@ hooks.
   the final execution environment.
 - An isolated negative test MUST inject command-start and lock-check failures.
   It MUST verify that a desktop-owned path does not request sleep before a
-  verified lock or session teardown.
+  verified lock and does not terminate the running graphical session.
 - A rendered-unit test MUST verify every executable that the shipped Hypridle
   template invokes by name. An activation check MAY validate additional user
   commands through a declared command manifest.
