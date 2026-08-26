@@ -273,6 +273,7 @@ verify_layout() {
   local source target source_dims target_dims
   local source_x source_y source_width source_height
   local target_x target_y target_width target_height
+  local center_delta
 
   source=$(require_monitor_json "$monitor_name")
   target=$(require_monitor_json "$target_name")
@@ -293,20 +294,24 @@ verify_layout() {
 
   case "$relation" in
     left-of)
+      center_delta=$((2 * source_y + source_height - 2 * target_y - target_height))
       ((source_x + source_width == target_x)) \
-        && ((2 * source_y + source_height == 2 * target_y + target_height))
+        && ((center_delta >= -1 && center_delta <= 1))
       ;;
     right-of)
+      center_delta=$((2 * source_y + source_height - 2 * target_y - target_height))
       ((source_x == target_x + target_width)) \
-        && ((2 * source_y + source_height == 2 * target_y + target_height))
+        && ((center_delta >= -1 && center_delta <= 1))
       ;;
     above)
+      center_delta=$((2 * source_x + source_width - 2 * target_x - target_width))
       ((source_y + source_height == target_y)) \
-        && ((2 * source_x + source_width == 2 * target_x + target_width))
+        && ((center_delta >= -1 && center_delta <= 1))
       ;;
     below)
+      center_delta=$((2 * source_x + source_width - 2 * target_x - target_width))
       ((source_y == target_y + target_height)) \
-        && ((2 * source_x + source_width == 2 * target_x + target_width))
+        && ((center_delta >= -1 && center_delta <= 1))
       ;;
     *) return 1 ;;
   esac

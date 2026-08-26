@@ -353,7 +353,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         run_monitor_action() {
           env \
             PATH="$fake_bin:$PATH" \
-            MONITORS_FIXTURE="$monitors_fixture" \
+            MONITORS_FIXTURE="''${HYPRCTL_BEFORE_FIXTURE:-$monitors_fixture}" \
             HYPRCTL_RECORD="$hyprctl_record" \
             HYPRCTL_APPLIED="$hyprctl_applied" \
             NOTIFY_RECORD="$notify_record" \
@@ -369,10 +369,13 @@ pkgs.runCommand "test-desktop-hyprland-lua"
           || fail "successful scale action did not notify"
 
         right_fixture="$TMPDIR/monitors-right.json"
+        odd_height_right_fixture="$TMPDIR/monitors-odd-height-right.json"
         below_fixture="$TMPDIR/monitors-below.json"
         mirror_fixture="$TMPDIR/monitors-mirror.json"
         jq 'map(if .name == "DP-1" then .x = 1920 | .y = -180 else . end)' \
           "$monitors_fixture" > "$right_fixture"
+        jq 'map(if .name == "eDP-1" then .height = 1081 elif .name == "DP-1" then .x = 1920 | .y = -179 else . end)' \
+          "$monitors_fixture" > "$odd_height_right_fixture"
         jq 'map(if .name == "eDP-1" then .x = 620 | .y = 1640 else . end)' \
           "$monitors_fixture" > "$below_fixture"
         jq 'map(if .name == "DP-1" then .mirrorOf = "eDP-1" else . end)' \
@@ -387,6 +390,17 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         sed -n '2p' "$hyprctl_record" \
           | grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "1920x-180", scale = 1, transform = 0, mirror = "" })' \
           || fail "relative layout action did not declare the dependent monitor second"
+
+        rm -f "$hyprctl_applied"
+        : > "$notify_record"
+        HYPRCTL_BEFORE_FIXTURE="$odd_height_right_fixture" \
+          HYPRCTL_AFTER_FIXTURE="$odd_height_right_fixture" \
+          run_monitor_action $'apply-layout\tDP-1\tright-of\teDP-1'
+        sed -n '2p' "$hyprctl_record" \
+          | grep -Fxq 'hl.monitor({ output = "DP-1", disabled = false, mode = "2560x1440@60.00", position = "1920x-179", scale = 1, transform = 0, mirror = "" })' \
+          || fail "odd-dimension layout did not use the nearest integer-centered position"
+        grep -Fq 'Monitor updated DP-1 placed right-of eDP-1' "$notify_record" \
+          || fail "nearest integer-centered layout with odd logical dimensions was rejected"
 
         rm -f "$hyprctl_applied"
         HYPRCTL_AFTER_FIXTURE="$below_fixture" run_monitor_action $'apply-layout\teDP-1\tbelow\tDP-1'
