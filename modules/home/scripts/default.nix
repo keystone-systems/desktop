@@ -317,10 +317,7 @@ let
     name = "keystone-battery-monitor";
     runtimeInputs = with pkgs; [
       coreutils
-      gawk
-      gnugrep
       libnotify
-      upower
     ];
     text = ''
       export KEYSTONE_BATTERY_WARNING_PERCENT=${toString cfg.health.battery.warningPercent}
