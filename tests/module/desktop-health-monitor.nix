@@ -16,6 +16,7 @@ pkgs.runCommand "test-desktop-health-monitor"
     fake_bin="$test_root/bin"
     state_dir="$test_root/state"
     notify_log="$test_root/notifications"
+    power_supply_root="$test_root/power-supply"
     mkdir -p "$fake_bin" "$state_dir"
     : > "$notify_log"
 
@@ -70,27 +71,52 @@ pkgs.runCommand "test-desktop-health-monitor"
     : > "$notify_log"
     export KEYSTONE_BATTERY_WARNING_PERCENT=20
     export KEYSTONE_BATTERY_CRITICAL_PERCENT=10
+    export KEYSTONE_POWER_SUPPLY_ROOT="$power_supply_root"
     battery_monitor="${pkgs.bash}/bin/bash $scripts/keystone-battery-monitor.sh"
 
-    KEYSTONE_BATTERY_LEVEL=21 KEYSTONE_BATTERY_STATE=discharging $battery_monitor
+    # A system without a battery, or with incomplete/malformed sysfs data, is
+    # not an error and must not notify.
+    $battery_monitor
+    mkdir -p "$power_supply_root/BAT0"
+    printf 'invalid\n' > "$power_supply_root/BAT0/capacity"
+    printf 'Discharging\n' > "$power_supply_root/BAT0/status"
+    $battery_monitor
+    rm "$power_supply_root/BAT0/status"
+    printf '20\n' > "$power_supply_root/BAT0/capacity"
+    $battery_monitor
     [[ ! -s "$notify_log" ]]
 
-    KEYSTONE_BATTERY_LEVEL=20 KEYSTONE_BATTERY_STATE=discharging $battery_monitor
-    KEYSTONE_BATTERY_LEVEL=20 KEYSTONE_BATTERY_STATE=discharging $battery_monitor
+    printf '21\n' > "$power_supply_root/BAT0/capacity"
+    printf 'Discharging\n' > "$power_supply_root/BAT0/status"
+    $battery_monitor
+    [[ ! -s "$notify_log" ]]
+
+    printf '20\n' > "$power_supply_root/BAT0/capacity"
+    $battery_monitor
+    $battery_monitor
     [[ "$(grep -c 'Battery low' "$notify_log")" -eq 1 ]]
 
-    KEYSTONE_BATTERY_LEVEL=10 KEYSTONE_BATTERY_STATE=discharging $battery_monitor
-    KEYSTONE_BATTERY_LEVEL=10 KEYSTONE_BATTERY_STATE=discharging $battery_monitor
+    printf '10\n' > "$power_supply_root/BAT0/capacity"
+    $battery_monitor
+    $battery_monitor
     [[ "$(grep -c 'Battery critically low' "$notify_log")" -eq 1 ]]
 
-    KEYSTONE_BATTERY_LEVEL=50 KEYSTONE_BATTERY_STATE=charging $battery_monitor
-    KEYSTONE_BATTERY_LEVEL=20 KEYSTONE_BATTERY_STATE=discharging $battery_monitor
+    printf '50\n' > "$power_supply_root/BAT0/capacity"
+    printf 'Charging\n' > "$power_supply_root/BAT0/status"
+    $battery_monitor
+    printf 'Not charging\n' > "$power_supply_root/BAT0/status"
+    $battery_monitor
+    printf '20\n' > "$power_supply_root/BAT0/capacity"
+    printf 'DISCHARGING\n' > "$power_supply_root/BAT0/status"
+    $battery_monitor
     [[ "$(grep -c 'Battery low' "$notify_log")" -eq 2 ]]
 
     rm -rf "$state_dir"
     mkdir -p "$state_dir"
     : > "$notify_log"
-    KEYSTONE_BATTERY_LEVEL=5 KEYSTONE_BATTERY_STATE=discharging $battery_monitor
+    printf '5\n' > "$power_supply_root/BAT0/capacity"
+    printf 'discharging\n' > "$power_supply_root/BAT0/status"
+    $battery_monitor
     [[ "$(grep -c 'Battery critically low' "$notify_log")" -eq 1 ]]
     ! grep -q 'Battery low' "$notify_log"
 

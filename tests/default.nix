@@ -394,7 +394,7 @@ let
   hyprlockPamText = evalHyprland.config.security.pam.services.hyprlock.text;
   startupPamText = evalHyprland.config.security.pam.services.hyprlock-startup.text;
   passwdPamText = evalHyprland.config.security.pam.services.passwd.text;
-  logindLidSwitch = evalHyprland.config.services.logind.settings.Login.HandleLidSwitch;
+  logindSettings = evalHyprland.config.services.logind.settings.Login;
 in
 {
   # No personal literal may survive the template scrub: absolute home paths,
@@ -598,13 +598,19 @@ in
   logind-lid-owner =
     pkgs.runCommand "logind-lid-owner"
       {
-        inherit logindLidSwitch;
+        inherit (logindSettings)
+          HandleLidSwitch
+          HandleLidSwitchExternalPower
+          HandleLidSwitchDocked
+          ;
       }
       ''
-        if [ "$logindLidSwitch" != "ignore" ]; then
-          echo "FAIL: logind must ignore lid events so lock verification precedes suspend" >&2
-          exit 1
-        fi
+        # expect: assert an eval-time value matches.
+        expect() { [ "$2" = "$3" ] || { echo "FAIL: $1" >&2; exit 1; }; }
+
+        expect "Hyprland owns lid handling on battery" "$HandleLidSwitch" ignore
+        expect "Hyprland owns lid handling on AC" "$HandleLidSwitchExternalPower" ignore
+        expect "Hyprland owns lid handling while docked" "$HandleLidSwitchDocked" ignore
         touch "$out"
       '';
 

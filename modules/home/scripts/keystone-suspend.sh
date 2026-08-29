@@ -12,35 +12,59 @@ case "${1:-}" in
     ;;
 esac
 
-power_supply_root="${KEYSTONE_POWER_SUPPLY_ROOT:-/sys/class/power_supply}"
 hibernate_marker="${KEYSTONE_SUSPEND_THEN_HIBERNATE_MARKER:-/etc/keystone/suspend-then-hibernate}"
 
-on_ac_power() {
-  local supply type
+if [[ "$lid_event" == true ]]; then
+  runtime_dir="${XDG_RUNTIME_DIR:?keystone-suspend --lid requires XDG_RUNTIME_DIR}"
+  exec 9>"$runtime_dir/keystone-suspend-lid.lock"
+  flock --nonblock 9 || exit 0
 
-  [[ -d "$power_supply_root" ]] || return 1
-  for supply in "$power_supply_root"/*; do
-    [[ -r "$supply/type" && -r "$supply/online" ]] || continue
-    type=$(<"$supply/type")
-    case "$type" in
-      Mains|USB|USB_C|USB_PD)
-        [[ "$(<"$supply/online")" == "1" ]] && return 0
-        ;;
+  login1_property() {
+    local property="$1"
+    local value
+
+    value="$(busctl get-property \
+      org.freedesktop.login1 \
+      /org/freedesktop/login1 \
+      org.freedesktop.login1.Manager \
+      "$property" 2>/dev/null)" || return 1
+    case "$value" in
+      "b true") printf 'true\n' ;;
+      "b false") printf 'false\n' ;;
+      *) return 1 ;;
     esac
-  done
-  return 1
-}
+  }
 
-# An AC lid close must not change the lock state or the sleep state.
-if [[ "$lid_event" == true ]] && on_ac_power; then
-  exit 0
+  docked="$(login1_property Docked)" || docked=false
+  lid_closed="$(login1_property LidClosed)" || exit 0
+
+  while [[ "$docked" == true && "$lid_closed" == true ]]; do
+    sleep "${KEYSTONE_LID_POLL_INTERVAL_SECONDS:-2}"
+    lid_closed="$(login1_property LidClosed)" || exit 0
+    [[ "$lid_closed" == true ]] || exit 0
+    docked="$(login1_property Docked)" || docked=false
+  done
+
+  [[ "$lid_closed" == true ]] || exit 0
+
+  keystone-lock 9>&-
+
+  lid_closed="$(login1_property LidClosed)" || exit 0
+  [[ "$lid_closed" == true ]] || exit 0
+else
+  keystone-lock
 fi
 
-# keystone-lock returns success only after it observes the session lock.
-keystone-lock --fail-closed
-
 if [[ -e "$hibernate_marker" ]]; then
-  systemctl suspend-then-hibernate
+  if [[ "$lid_event" == true ]]; then
+    systemctl suspend-then-hibernate 9>&-
+  else
+    systemctl suspend-then-hibernate
+  fi
 else
-  systemctl suspend
+  if [[ "$lid_event" == true ]]; then
+    systemctl suspend 9>&-
+  else
+    systemctl suspend
+  fi
 fi

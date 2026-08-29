@@ -89,9 +89,13 @@ in
       ];
     };
 
-    # Hyprland owns lid suspend so it can establish a verified session lock
-    # before requesting sleep. logind must not race the lid binding.
-    services.logind.settings.Login.HandleLidSwitch = mkDefault "ignore";
+    # Hyprland owns lid policy so keystone-suspend can serialize duplicate
+    # switch events, wait out docking, and verify the lid around locking.
+    services.logind.settings.Login = {
+      HandleLidSwitch = mkDefault "ignore";
+      HandleLidSwitchExternalPower = mkDefault "ignore";
+      HandleLidSwitchDocked = mkDefault "ignore";
+    };
 
     # Greetd launches the user's Hyprland session directly. Startup
     # authentication happens inside Hyprland via keystone-startup-lock, which

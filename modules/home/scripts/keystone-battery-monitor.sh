@@ -5,32 +5,32 @@ warning_percent="${KEYSTONE_BATTERY_WARNING_PERCENT:-20}"
 critical_percent="${KEYSTONE_BATTERY_CRITICAL_PERCENT:-10}"
 state_dir="${KEYSTONE_HEALTH_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/keystone-health-monitor}"
 notify_send="${KEYSTONE_NOTIFY_SEND_BIN:-notify-send}"
+power_supply_root="${KEYSTONE_POWER_SUPPLY_ROOT:-/sys/class/power_supply}"
 warning_flag="$state_dir/battery-warning"
 critical_flag="$state_dir/battery-critical"
 
-mkdir -p "$state_dir"
-
-if [[ -n "${KEYSTONE_BATTERY_LEVEL:-}" || -n "${KEYSTONE_BATTERY_STATE:-}" ]]; then
-  battery_level="${KEYSTONE_BATTERY_LEVEL:-}"
-  battery_state="${KEYSTONE_BATTERY_STATE:-}"
-else
-  battery_device="$(upower -e | grep 'BAT' | head -n 1 || true)"
-  if [[ -z "$battery_device" ]]; then
-    exit 0
+battery_device=""
+battery_level=""
+battery_state=""
+for candidate in "$power_supply_root"/BAT*; do
+  if [[ -r "$candidate/capacity" && -r "$candidate/status" ]] \
+    && IFS= read -r battery_level < "$candidate/capacity" \
+    && IFS= read -r battery_state < "$candidate/status"; then
+    battery_device="$candidate"
+    break
   fi
+done
 
-  battery_info="$(upower -i "$battery_device")"
-  battery_level="$(
-    awk '/percentage:/ { gsub("%", "", $2); print $2; exit }' <<<"$battery_info"
-  )"
-  battery_state="$(
-    awk '/state:/ { print $2; exit }' <<<"$battery_info"
-  )"
-fi
+# A host with no readable battery is not an error; nothing to report on.
+[[ -n "$battery_device" ]] || exit 0
 
-if [[ ! "$battery_level" =~ ^[0-9]+$ ]]; then
+battery_state="${battery_state,,}"
+
+if [[ ! "$battery_level" =~ ^[0-9]+$ ]] || (( battery_level > 100 )); then
   exit 0
 fi
+
+[[ -d "$state_dir" ]] || mkdir -p "$state_dir"
 
 clear_flags() {
   rm -f "$warning_flag" "$critical_flag"
