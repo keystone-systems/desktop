@@ -23,13 +23,16 @@ if [[ "$lid_event" == true ]]; then
     local property="$1"
     local value
 
-    value="$(busctl --value get-property \
+    value="$(busctl get-property \
       org.freedesktop.login1 \
       /org/freedesktop/login1 \
       org.freedesktop.login1.Manager \
       "$property" 2>/dev/null)" || return 1
-    [[ "$value" == true || "$value" == false ]] || return 1
-    printf '%s\n' "$value"
+    case "$value" in
+      "b true") printf 'true\n' ;;
+      "b false") printf 'false\n' ;;
+      *) return 1 ;;
+    esac
   }
 
   docked="$(login1_property Docked)" || docked=false

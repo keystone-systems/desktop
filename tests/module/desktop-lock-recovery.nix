@@ -371,15 +371,15 @@ pkgs.runCommand "test-desktop-lock-recovery"
     EOF
     cat > "$fake_bin/busctl" <<'EOF'
     #!${pkgs.bash}/bin/bash
-    property="$6"
+    property="$5"
     if [[ "$property" == "Docked" ]]; then
       [[ "''${FAKE_DOCK_LOOKUP_FAIL:-false}" != "true" ]] || exit 1
-      cat "$FAKE_DOCKED_STATE"
+      printf 'b %s\n' "$(cat "$FAKE_DOCKED_STATE")"
     elif [[ "$property" == "LidClosed" ]]; then
       count=$(( $(cat "$FAKE_LID_QUERY_COUNT") + 1 ))
       printf '%s\n' "$count" > "$FAKE_LID_QUERY_COUNT"
       [[ "''${FAKE_LID_FAIL_ON_QUERY:-0}" -ne "$count" ]] || exit 1
-      cat "$FAKE_LID_STATE"
+      printf 'b %s\n' "$(cat "$FAKE_LID_STATE")"
     else
       exit 1
     fi
