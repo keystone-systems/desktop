@@ -9,6 +9,7 @@ let
     "omarchy-menu"
     "omarchy-menu-images"
     "omarchy-audio-input-mute"
+    "omarchy-audio-output-sink"
     "omarchy-audio-output-volume"
     "omarchy-powerprofiles-list"
     "omarchy-powerprofiles-set"
