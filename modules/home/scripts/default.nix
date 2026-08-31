@@ -16,17 +16,8 @@ let
   keystoneSuspendPkg =
     desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.keystone-suspend;
 
-  # Screen recording script using gpu-screen-recorder
-  #
-  # Waybar Integration:
-  # The waybar module "custom/screenrecording-indicator" uses signal-based updates
-  # instead of polling for efficiency. When recording starts or stops, we send
-  # RTMIN+8 signal to waybar (pkill -RTMIN+8 waybar) which triggers it to re-run
-  # the indicator's exec command and update the display immediately.
-  #
-  # The waybar config uses "signal": 8 which maps to RTMIN+8.
-  # See: templates/waybar/.config/waybar/config (custom/screenrecording-indicator)
-  #
+  # Screen recording script using gpu-screen-recorder. Quattro polls the
+  # recording command widget, so no out-of-band refresh signal is required.
   keystoneScreenrecord = pkgs.writeShellScriptBin "keystone-screenrecord" ''
     [[ -f ~/.config/user-dirs.dirs ]] && source ~/.config/user-dirs.dirs
     OUTPUT_DIR="''${KEYSTONE_SCREENRECORD_DIR:-''${XDG_VIDEOS_DIR:-$HOME/Videos}}"
@@ -62,7 +53,6 @@ let
 
       ${pkgs.gpu-screen-recorder}/bin/gpu-screen-recorder -w portal -f 60 -encoder gpu -o "$filename" $audio_args -ac aac &
       ${pkgs.libnotify}/bin/notify-send "Screen recording started" -t 2000
-      ${pkgs.procps}/bin/pkill -RTMIN+8 waybar
     }
 
     stop_screenrecording() {
@@ -81,7 +71,6 @@ let
       else
         ${pkgs.libnotify}/bin/notify-send "Screen recording saved to $OUTPUT_DIR" -t 2000
       fi
-      ${pkgs.procps}/bin/pkill -RTMIN+8 waybar
     }
 
     screenrecording_active() {
@@ -717,7 +706,7 @@ in
             };
           };
 
-          # Report filesystem pressure to both Mako and Waybar.
+          # Report filesystem pressure through Mako notifications.
           systemd.user.services.keystone-disk-monitor = {
             Unit = {
               Description = "Keystone disk usage notification";

@@ -22,6 +22,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     test_root="$TMPDIR/lock-test"
     fake_bin="$test_root/bin"
     state_file="$test_root/state"
+    service_state_file="$test_root/service-state"
     stale_pid_file="$test_root/stale.pid"
     launch_log="$test_root/launch.log"
     notify_log="$test_root/notify.log"
@@ -35,6 +36,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     hibernate_marker="$test_root/suspend-then-hibernate"
     mkdir -p "$fake_bin"
     : > "$stale_pid_file"
+    : > "$service_state_file"
     : > "$launch_log"
     : > "$notify_log"
     : > "$terminate_log"
@@ -93,13 +95,20 @@ pkgs.runCommand "test-desktop-lock-recovery"
     fi
     EOF
 
-    # Reports the deliberately stale hyprlock process of case 3. keystone-lock
-    # MUST never consult these, so a PID heuristic shows up as a missing launch.
-    cat > "$fake_bin/pidof" <<'EOF'
+    # Model both a live lock client and the deliberately stale process in case
+    # 3. The protocol bit and process liveness must corroborate each other.
+    cat > "$fake_bin/pgrep" <<'EOF'
     #!${pkgs.bash}/bin/bash
-    [[ -s "$FAKE_STALE_PID" ]] && cat "$FAKE_STALE_PID"
+    if [[ "''${FAKE_HYPRLOCK_RUNNING:-false}" == "true" ]]; then
+      printf '1234\n'
+    elif [[ -s "$FAKE_STALE_PID" ]]; then
+      cat "$FAKE_STALE_PID"
+    elif [[ "$(cat "$FAKE_LOCK_STATE")" == "locked" && -s "$FAKE_SERVICE_STATE" ]]; then
+      printf '5678\n'
+    else
+      exit 1
+    fi
     EOF
-    cp "$fake_bin/pidof" "$fake_bin/pgrep"
 
     cat > "$fake_bin/notify-send" <<'EOF'
     #!${pkgs.bash}/bin/bash
@@ -113,6 +122,24 @@ pkgs.runCommand "test-desktop-lock-recovery"
 
     cat > "$fake_bin/systemctl" <<'EOF'
     #!${pkgs.bash}/bin/bash
+    if [[ "''${1:-}" == "--user" && "''${2:-}" == "is-active" ]]; then
+      requested="''${4:-}"
+      [[ "''${FAKE_ACTIVE_LOCK_UNIT:-}" == "$requested" || "$(cat "$FAKE_SERVICE_STATE")" == "$requested" ]]
+      exit
+    fi
+    if [[ "''${1:-}" == "--user" && "''${2:-}" == "start" ]]; then
+      case "''${3:-}" in
+        keystone-hyprlock.service | keystone-hyprlock-startup.service)
+          printf 'start %s\n' "$3" >> "$FAKE_LAUNCH_LOG"
+          printf '%s\n' "$3" > "$FAKE_SERVICE_STATE"
+          if [[ "''${FAKE_LOCK_ON_LAUNCH:-false}" == "true" ]]; then
+            printf 'locked\n' > "$FAKE_LOCK_STATE"
+          fi
+          [[ "''${FAKE_LOCK_SERVICE_START_FAIL:-false}" != "true" ]]
+          exit
+          ;;
+      esac
+    fi
     printf 'systemctl %s\n' "$*" >> "$FAKE_TERMINATE_LOG"
     [[ "''${FAKE_SYSTEMCTL_FAIL:-false}" != "true" ]]
     EOF
@@ -127,6 +154,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     chmod +x "$fake_bin"/*
     export PATH="$fake_bin:$PATH"
     export FAKE_LOCK_STATE="$state_file"
+    export FAKE_SERVICE_STATE="$service_state_file"
     export FAKE_STALE_PID="$stale_pid_file"
     export FAKE_LAUNCH_LOG="$launch_log"
     export FAKE_NOTIFY_LOG="$notify_log"
@@ -136,7 +164,6 @@ pkgs.runCommand "test-desktop-lock-recovery"
     export KEYSTONE_LOCK_POLL_INTERVAL_SECONDS=0.05
     export KEYSTONE_LOCK_TIMEOUT_MILLISECONDS=1000
     export KEYSTONE_LOCK_TEARDOWN_TIMEOUT_MILLISECONDS=250
-    export KEYSTONE_LOCK_STARTUP_CONFIG="$startup_config"
     unset XDG_SESSION_ID
 
     fail() {
@@ -154,26 +181,64 @@ pkgs.runCommand "test-desktop-lock-recovery"
       local state="$1"
       shift
       printf '%s\n' "$state" > "$state_file"
+      : > "$service_state_file"
       : > "$launch_log"
       printf '0\n' > "$query_count_file"
       ${pkgs.bash}/bin/bash "$script" "$@"
     }
 
     launch_count() {
-      grep -c '^launch --immediate-render$' "$launch_log" || true
+      grep -c '^start keystone-hyprlock.service$' "$launch_log" || true
     }
 
     startup_launch_count() {
-      grep -c "^launch --immediate-render --config $startup_config$" "$launch_log" || true
+      grep -c '^start keystone-hyprlock-startup.service$' "$launch_log" || true
     }
 
     menu_arm() {
       grep -A4 "$1)" "$main_menu"
     }
 
-    # 1. Hyprland's session-lock state is authoritative.
-    check "Hyprland locked state must return success" run_lock locked
-    check "Hyprland locked state must not launch hyprlock" test ! -s "$launch_log"
+    # 1. Protocol state corroborated by a live Hyprlock client is authoritative.
+    export FAKE_HYPRLOCK_RUNNING=true
+    export FAKE_ACTIVE_LOCK_UNIT=keystone-hyprlock.service
+    check "a live locked session must return success" run_lock locked
+    check "a live locked session must not launch hyprlock" test ! -s "$launch_log"
+    unset FAKE_HYPRLOCK_RUNNING FAKE_ACTIVE_LOCK_UNIT
+
+    # An ordinary request during startup must preserve the password-only
+    # client that opens the login keyring. Conversely, startup mode must not
+    # accept an already-running ordinary fingerprint-capable client.
+    export FAKE_HYPRLOCK_RUNNING=true
+    export FAKE_ACTIVE_LOCK_UNIT=keystone-hyprlock-startup.service
+    export KEYSTONE_LOCK_TIMEOUT_MILLISECONDS=0
+    if run_lock none; then
+      fail "an ordinary request accepted a startup lock before it was ready"
+    fi
+    check "an ordinary request must not replace a not-yet-ready startup lock" \
+      test ! -s "$launch_log"
+    export KEYSTONE_LOCK_TIMEOUT_MILLISECONDS=1000
+    check "an ordinary request must accept the supervised startup lock" run_lock locked
+    check "an ordinary request must not replace the startup lock" test ! -s "$launch_log"
+    export FAKE_ACTIVE_LOCK_UNIT=keystone-hyprlock.service
+    export FAKE_LOCK_ON_LAUNCH=true
+    check "startup mode must replace an ordinary lock" run_lock locked --startup
+    [[ "$(startup_launch_count)" -eq 1 ]] || fail "startup mode accepted the ordinary lock unit"
+    unset FAKE_HYPRLOCK_RUNNING FAKE_ACTIVE_LOCK_UNIT FAKE_LOCK_ON_LAUNCH
+
+    # Hyprland deliberately retains locked=true if its lock client disappears.
+    # That stale bit must not suppress a replacement Hyprlock launch.
+    export FAKE_LOCK_ON_LAUNCH=true
+    check "a stale compositor lock bit must relaunch hyprlock" run_lock locked
+    unset FAKE_LOCK_ON_LAUNCH
+    [[ "$(launch_count)" -eq 1 ]] || fail "stale compositor lock recovery must launch once"
+
+    # A crashed supervised client leaves a stale compositor lock bit and an
+    # inactive unit. The replacement service must reclaim the session lock.
+    export FAKE_LOCK_ON_LAUNCH=true
+    check "a crashed lock client must be recovered" run_lock locked
+    unset FAKE_LOCK_ON_LAUNCH
+    [[ "$(launch_count)" -eq 1 ]] || fail "crash recovery must launch the supervised lock once"
 
     # Startup mode is an order-independent addition to the same verified lock
     # path. It changes only the selected Hyprlock config.
@@ -315,14 +380,25 @@ pkgs.runCommand "test-desktop-lock-recovery"
       || fail "failed teardown requests ran out of order"
 
     # Static guards: keystone-lock owns lock truth and session termination.
-    if grep -Eq '\b(pidof|pgrep|pkill|flock)\b' "$script"; then
-      fail "keystone-lock must not use PID or mutex state as lock truth"
+    if grep -Eq '\b(pidof|pkill|flock)\b' "$script"; then
+      fail "keystone-lock must not use legacy PID or mutex state as lock truth"
     fi
     if grep -Eq 'loginctl .*LockedHint|hyprctl -j layers' "$script"; then
       fail "keystone-lock must use Hyprland's direct session-lock state"
     fi
     check "keystone-lock must query Hyprland's direct session-lock state" \
       grep -q 'hyprctl -j locked' "$script"
+    check "keystone-lock must corroborate protocol state with a user-owned Hyprlock client" \
+      grep -q 'pgrep -u "\$user_id" -x hyprlock' "$script"
+    check "keystone-lock must require its supervised service to be active" \
+      grep -q 'lock_service_active' "$script"
+    check "ordinary locking must preserve an active startup lock" \
+      grep -q 'startup_lock_active' "$script"
+    check "keystone-lock must launch through the supervised user service" \
+      grep -q 'systemctl --user start "\$lock_unit"' "$script"
+    if grep -Eq '^[[:space:]]*hyprlock([[:space:]]|$).*&|hyprlock_args|KEYSTONE_LOCK_STARTUP_CONFIG' "$script"; then
+      fail "keystone-lock must not launch Hyprlock directly or accept an ambient startup config"
+    fi
     if grep -q 'hyprctl dispatch exit' "$script"; then
       fail "UWSM sessions must not use compositor-native exit"
     fi
@@ -349,8 +425,19 @@ pkgs.runCommand "test-desktop-lock-recovery"
     fi
     check "the idle listener must lock through keystone-lock" \
       grep -q '^  on-timeout=keystone-lock$' "$hypridle_conf"
+    check "hypridle after-sleep must use the typed DPMS dispatcher" \
+      grep -Fqx "  after_sleep_cmd=keystone-dpms-wake || (hyprctl dispatch 'hl.dsp.dpms({ action = \"on\" })' && brightnessctl -r)" "$hypridle_conf"
+    check "hypridle resume must use the typed DPMS dispatcher" \
+      grep -Fqx "  on-resume=keystone-dpms-wake || (hyprctl dispatch 'hl.dsp.dpms({ action = \"on\" })' && brightnessctl -r)" "$hypridle_conf"
+    check "hypridle timeout must use the typed DPMS dispatcher" \
+      grep -Fqx "  on-timeout=hyprctl dispatch 'hl.dsp.dpms({ action = \"off\" })'" "$hypridle_conf"
+    if grep -Eq '^[^#]*hyprctl dispatch[[:space:]]+dpms([[:space:]]|$)' "$hypridle_conf"; then
+      fail "hypridle must not use the legacy bare DPMS dispatcher form"
+    fi
     check "the lid must use the suspend policy helper" \
       grep -q 'keystone-suspend --lid' "$hyprland_conf"
+    check "Hyprland must accept a supervised replacement lock client" \
+      grep -q 'allow_session_lock_restore = true' "$hyprland_conf"
     menu_arm system-lock | grep -q 'keystone_cmd keystone-lock' \
       || fail "the System menu lock entry must run keystone-lock"
     menu_arm system-suspend | grep -q 'keystone_cmd keystone-suspend' \

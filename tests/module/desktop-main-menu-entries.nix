@@ -195,6 +195,11 @@ pkgs.runCommand "desktop-main-menu-entries"
     test "$(printf '%s' "$backgrounds" | ${pkgs.jq}/bin/jq -r '[.[].Text] | join(",")')" = one.jpg,two.jpg
     test "$(printf '%s' "$backgrounds" | ${pkgs.jq}/bin/jq -r '.[0].Value')" = $'background-select\tbackgrounds/one.jpg'
 
+    echo "-- Quattro bar toggle --"
+    toggle="$(env -i HOME="$HOME" PATH=/var/empty "$command" toggle-json)"
+    test "$(printf '%s' "$toggle" | ${pkgs.jq}/bin/jq -r '.[] | select(.Text == "Top bar") | .Value')" = toggle-bar
+    grep -Fq 'detach "$(keystone_cmd omarchy-toggle-bar)"' ${../../modules/home/scripts/keystone-main-menu.sh}
+
     if [ "$errors" -gt 0 ]; then
       echo "FAIL: $errors main-menu matrix cell(s) wrong" >&2
       exit 1

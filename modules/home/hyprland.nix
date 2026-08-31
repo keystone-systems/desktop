@@ -26,9 +26,32 @@ let
     Service.ExecStart = execStart;
     Install.WantedBy = [ "graphical-session.target" ];
   };
+  hyprlockService =
+    {
+      description,
+      execStart,
+      conflictsWith,
+    }:
+    {
+      Unit = {
+        Description = description;
+        Requires = [ "wayland-session-waitenv.service" ];
+        After = [ "wayland-session-waitenv.service" ];
+        PartOf = [ "wayland-session@Hyprland.target" ];
+        Conflicts = [
+          conflictsWith
+          "wayland-session-shutdown.target"
+        ];
+      };
+      Service = {
+        ExecStart = execStart;
+        Restart = "on-failure";
+        RestartSec = 1;
+      };
+    };
 in
 {
-  # Session wiring only. Hyprland/hypridle/hyprlock/hyprpaper/waybar settings
+  # Session wiring only. Hyprland/hypridle/hyprlock/hyprpaper settings
   # are NOT generated here — editable configuration comes from the user's
   # stowed dotfiles (seed with `nix run .#seed-dotfiles`). Nix owns the
   # binaries (OS-level) and these hand-written user units.
@@ -65,6 +88,25 @@ in
         RemainAfterExit = true;
       };
       Install.RequiredBy = [ "graphical-session.target" ];
+    };
+
+    # Hyprlock must run under the user manager, not as a child of whichever
+    # caller happened to request a lock. In particular, a recovery requested
+    # over SSH otherwise inherits a remote logind session and fprintd rejects
+    # native fingerprint verification. Restarting only on failure preserves a
+    # normal successful unlock while automatically replacing a crashed lock
+    # client. The Hyprland template enables allow_session_lock_restore so that
+    # replacement can take ownership without unlocking the compositor.
+    systemd.user.services.keystone-hyprlock = hyprlockService {
+      description = "Keystone Hyprlock session lock";
+      execStart = keystoneLockPkg.normalCommand;
+      conflictsWith = "keystone-hyprlock-startup.service";
+    };
+
+    systemd.user.services.keystone-hyprlock-startup = hyprlockService {
+      description = "Keystone password-only startup lock";
+      execStart = keystoneLockPkg.startupCommand;
+      conflictsWith = "keystone-hyprlock.service";
     };
 
     systemd.user.services.keystone-audio-defaults =
@@ -160,18 +202,5 @@ in
 
     systemd.user.services.hyprpolkitagent = graphicalService "Hyprland polkit authentication agent" "${hyprpolkitagentPkg}/libexec/hyprpolkitagent";
 
-    systemd.user.services.waybar = {
-      Unit = {
-        Description = "Waybar status bar";
-        PartOf = [ "graphical-session.target" ];
-        After = [ "graphical-session.target" ];
-        Requisite = [ "graphical-session.target" ];
-      };
-      Service = {
-        ExecStart = "${pkgs.waybar}/bin/waybar";
-        Restart = "on-failure";
-      };
-      Install.WantedBy = [ "graphical-session.target" ];
-    };
   };
 }

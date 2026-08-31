@@ -250,14 +250,18 @@ pkgs.runCommand "test-desktop-hyprland-lua"
           grep -E "app \\.\\. .*''${command}" "$main" >/dev/null \
             || fail "graphical launcher $command must run through uwsm app --"
         done
+        grep -Fq 'bind(mod .. " + SHIFT + Space", hl.dsp.exec_cmd("omarchy-toggle-bar"))' "$main" \
+          || fail "the bar keybinding must use Quattro's supported toggle command"
+        grep -Fq 'window_rule("omarchy-terminal", { class = "^(org.omarchy.terminal)$" }, { float = true, center = true, size = { 875, 600 } })' "$main" \
+          || fail "the Omarchy presentation terminal must remain visible and floating"
 
         if grep -RE 'exec-once|import-environment|dbus-update-activation-environment|hyprctl dispatch exit' \
           "$templates/hyprland/.config/hypr"; then
           fail "legacy startup or compositor-native exit remains"
         fi
 
-        # The monitor menu and DPMS hooks must use the Lua IPC surface. Keep
-        # this guard scoped to the migrated paths. keystone-context.sh remains
+        # The monitor menu and DPMS hooks use the Lua IPC surface. Keep this
+        # guard scoped to the migrated paths. keystone-context.sh remains
         # outside this migration because its legacy dispatcher set includes
         # movetoworkspacesilent, which has no direct Lua `silent` equivalent.
         monitor_menu=${../..}/modules/home/scripts/keystone-monitor-menu.sh
@@ -268,7 +272,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
           | grep -vE "^hyprctl[[:space:]]+dispatch[[:space:]]+['\"]?hl\\.dsp\\." || true)"
         if [ -n "$legacy_ipc" ]; then
           echo "$legacy_ipc" >&2
-          fail "hyprctl takes Lua — use hl.dsp.* dispatchers and hl.* config tables"
+          fail "hyprctl dispatch requires typed hl.dsp.* expressions; use hl.* config tables"
         fi
         grep -Fq "hl.monitor({" "$monitor_menu" \
           || fail "monitor menu must build hl.monitor Lua tables"

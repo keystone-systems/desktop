@@ -7,7 +7,7 @@ host can consume the terminal product without this repository.
 
 **Division of labor**: Nix owns binaries, session wiring
 (greetd/uwsm/PAM/pipewire/portals), scripts/menus, and the templates
-themselves. Runtime configuration — `hyprland.lua`, waybar, wofi, walker
+themselves. Runtime configuration — `hyprland.lua`, Quattro, wofi, walker
 config, themes — lives in **your dotfiles repo**, seeded once from
 `templates/` and yours thereafter. Nix never generates or overwrites your
 editable config.
@@ -71,8 +71,14 @@ The templates are a **starter set you copy once** into your own dotfiles repo
 ```sh
 nix run git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git#seed-dotfiles -- ~/repos/<me>/dotfiles/packages
 cd ~/repos/<me>/dotfiles
-stow -d packages -t ~ hyprland waybar wofi walker themes
+stow -d packages -t ~ hyprland omarchy wofi walker themes
 ```
+
+First-time Hyprland consumers MUST include the `omarchy` Stow package. It
+owns the editable `~/.config/omarchy/shell.json` that selects Keystone's
+supported Quattro plugins; the shell service does not create that user
+configuration. See the [Quattro compatibility boundary](docs/quattro-compatibility.md)
+for the packaged runtime and command contracts.
 
 `seed-dotfiles` skips files that already exist; pass `--force` to overwrite.
 After seeding, the files are yours — edit them freely, commit them to your
@@ -81,10 +87,10 @@ state.
 
 `ks.systems/terminal` owns the four terminal adapters and the
 `keystone-theme-switch` command. This product appends graphical adapter
-requirements, a filtered Omarchy v3.0.2 base catalog, a sparse Keystone
-graphical catalog, and a graphical reload hook. Every composed desktop theme
-MUST satisfy both contracts. A theme switch affects new Zellij sessions. It
-does not change a running session.
+requirements, a filtered Omarchy `quattro` branch catalog, a sparse Keystone
+graphical source catalog, and a graphical reload hook. Every composed desktop
+theme MUST satisfy both contracts. A theme switch affects new Zellij sessions.
+It does not change a running session.
 
 ### The Lua runtime contract
 

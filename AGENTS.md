@@ -7,11 +7,11 @@ terminal themes without this product.
 
 Nix owns **binaries, session
 wiring (greetd/uwsm/PAM/pipewire/portals), scripts/menus, and theming
-activation**; runtime configuration (hyprland.lua, waybar, wofi, walker
+activation**; runtime configuration (hyprland.lua, Quattro, wofi, walker
 config, themes) is owned by the **user's dotfiles**, seeded once from
 `templates/` via `nix run .#seed-dotfiles`. Do not reintroduce Nix-side
 settings generation (`wayland.windowManager.hyprland.settings`,
-`programs.waybar`, `programs.hyprlock`, `services.hypridle.settings`, …) —
+`programs.hyprlock`, `services.hypridle.settings`, …) —
 that tree was verified dead in production and deliberately deleted during the
 extraction. Config changes go to `templates/` (and the user's own dotfiles);
 wiring changes go to `modules/`.
@@ -50,7 +50,7 @@ default session + `initial_session` auto-login into a locked session), startup
 NetworkManager, flatpak, Nerd Fonts (JetBrains Mono, Caskaydia Mono), polkit,
 OOM protection (Docker/Podman get `OOMScoreAdjust = 1000`), OBS Studio with
 PipeWire audio capture, and **every binary the templates invoke by bare name**
-(waybar, wofi, mako, hypr* tools, grim/slurp/satty, clipse, brightnessctl,
+(quickshell, wofi, mako, hypr* tools, grim/slurp/satty, clipse, brightnessctl,
 playerctl, keystone-dpms-wake, …). The `template-binaries` check enforces that
 union — stowed configs run outside any HM wrapper PATH.
 
@@ -92,7 +92,7 @@ Session wiring only — units, scripts, menus, theming activation. Components:
 
 | Component  | File                        | Key Detail                                              |
 | ---------- | --------------------------- | ------------------------------------------------------- |
-| Session    | `hyprland.nix`              | hypridle/hyprpaper/waybar user units + envelope target  |
+| Session    | `hyprland.nix`              | hypridle/hyprpaper/lock user units + envelope target    |
 | Launcher   | `components/launcher.nix`   | walker/elephant units + `keystone-*.lua` menus; sole importer of the walker HM module; `programs.walker.enable = false` (config from dotfiles) |
 | Screenshot | `components/screenshot.nix` | `keystone-screenshot` wrapper (grim + slurp + satty)    |
 | Mako       | `components/mako.nix`       | Notification daemon (themed)                            |

@@ -10,6 +10,7 @@
 with lib;
 let
   cfg = config.keystone.desktop;
+  quattro = import ../../lib/quattro-runtime.nix { inherit pkgs desktopInputs; };
   # CRITICAL: XDG_SESSION_CLASS=user must be in the command environment so pam_systemd.so
   # sees it before registering the logind session. The PAM class= argument alone is not
   # sufficient — pam_systemd gives XDG_SESSION_CLASS env var highest precedence.
@@ -41,6 +42,11 @@ in
     # the shared hyprlock.conf expects (auth:fingerprint:enabled).
     # See ks-config#6.
     programs.hyprlock.enable = mkDefault true;
+
+    # The graphical battery monitor invokes the UPower client. Installing the
+    # client binary without its D-Bus daemon makes `upower -e` dereference a
+    # failed client connection and crash on current nixpkgs (UPower 1.91.1).
+    services.upower.enable = mkDefault true;
 
     # greetd opens the long-lived graphical session without a password, so
     # gnome-keyring-daemon starts in the locked state and the first Hyprlock
@@ -173,33 +179,35 @@ in
     # user's stowed dotfiles (seeded from templates/), which invoke these by
     # bare name — every binary a template references must be present here
     # (enforced by the template-binaries check).
-    environment.systemPackages = with pkgs; [
-      hyprlock
-      hypridle
-      hyprsunset
-      hyprpicker
-      # Match the HM hyprpaper unit's ExecStart package so the daemon and any
-      # hyprpaper CLI invocations agree on IPC.
-      desktopInputs.hyprpaper.packages.${stdenv.hostPlatform.system}.hyprpaper
-      keystone-desktop.hyprpolkitagent
-      keystone-desktop.keystone-dpms-wake
-      keystone-desktop.keystone-lock
-      keystone-desktop.keystone-suspend
-      waybar
-      wofi
-      mako
-      swayosd
-      libnotify
-      wl-clipboard
-      wl-clip-persist
-      clipse
-      grim
-      slurp
-      satty
-      wayfreeze
-      brightnessctl
-      playerctl
-    ];
+    environment.systemPackages =
+      quattro.runtimePackages
+      ++ [ quattro.runtimeTree ]
+      ++ (with pkgs; [
+        hyprlock
+        hypridle
+        hyprsunset
+        hyprpicker
+        # Match the HM hyprpaper unit's ExecStart package so the daemon and any
+        # hyprpaper CLI invocations agree on IPC.
+        desktopInputs.hyprpaper.packages.${stdenv.hostPlatform.system}.hyprpaper
+        keystone-desktop.hyprpolkitagent
+        keystone-desktop.keystone-dpms-wake
+        keystone-desktop.keystone-lock
+        keystone-desktop.keystone-suspend
+        wofi
+        mako
+        swayosd
+        libnotify
+        wl-clipboard
+        wl-clip-persist
+        clipse
+        grim
+        slurp
+        satty
+        wayfreeze
+        brightnessctl
+        playerctl
+      ]);
     # xdg-desktop-portal-hyprland stays wired via programs.hyprland.portalPackage.
   };
 }

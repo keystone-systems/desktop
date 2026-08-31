@@ -58,9 +58,9 @@ pkgs.runCommand "test-desktop-health-monitor"
     FAKE_DISK_USED=90 $disk_monitor notify
     [[ "$(grep -c 'Disk space critically low' "$notify_log")" -eq 2 ]]
 
-    healthy_json="$(FAKE_DISK_USED=79 $disk_monitor waybar)"
-    warning_json="$(FAKE_DISK_USED=80 $disk_monitor waybar)"
-    critical_json="$(FAKE_DISK_USED=90 $disk_monitor waybar)"
+    healthy_json="$(FAKE_DISK_USED=79 $disk_monitor json)"
+    warning_json="$(FAKE_DISK_USED=80 $disk_monitor json)"
+    critical_json="$(FAKE_DISK_USED=90 $disk_monitor json)"
     [[ "$(jq -r '.text' <<<"$healthy_json")" == "" ]]
     [[ "$(jq -r '.class' <<<"$warning_json")" == "warning" ]]
     [[ "$(jq -r '.class' <<<"$critical_json")" == "critical" ]]

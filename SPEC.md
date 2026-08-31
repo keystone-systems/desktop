@@ -9,7 +9,7 @@ The Keystone Desktop provides a keyboard-driven, efficient workspace for develop
 
 - **Nix Owns the Machinery, Dotfiles Own the Config**: Nix manages binaries,
   session wiring (greetd/uwsm/PAM/pipewire/portals), scripts, and menus;
-  runtime configuration (Hyprland, waybar, wofi, walker, themes) lives in the
+  runtime configuration (Hyprland, Quattro, wofi, walker, themes) lives in the
   user's own dotfiles repo, seeded once from the composed terminal and desktop
   templates
 - **Keyboard-First Interaction**: Minimal mouse dependency with discoverable keybindings
@@ -27,7 +27,7 @@ desktop/
 │   │   ├── hyprland.nix    # Full implementation
 │   │   └── gnome.nix, niri.nix   # Minimal stubs
 │   └── home/
-│       ├── hyprland.nix    # Session user units (hypridle, hyprpaper, waybar)
+│       ├── hyprland.nix    # Session user units (hypridle, hyprpaper, lock)
 │       ├── components/     # launcher, screenshot, mako, swayosd, clipboard…
 │       ├── scripts/        # Menu system and utility scripts
 │       └── theming/        # Graphical theme requirements and reload hook
@@ -55,9 +55,8 @@ selector and requires `zellij.kdl`, `helix.toml`, `btop.theme`, and
 themes/
 ├── royal-green/
 │   ├── hyprland.lua        # Border colors, accent colors
-│   ├── waybar.css          # Status bar styling
-│   ├── mako.ini            # Notification styling
-│   ├── hyprlock.conf       # Lock screen styling
+│   ├── shell.toml          # Quattro shell palette
+│   ├── colors.toml         # Semantic palette input
 │   ├── ghostty.conf        # Terminal emulator styling
 │   ├── chromium.theme      # Browser color
 │   ├── icons.theme         # Icon theme name
@@ -84,13 +83,15 @@ keystone-theme-switch --refresh
 ```
 
 `ks.systems/terminal` provides this command. Desktop MUST NOT replace it or
-redeclare `keystone.terminal.theme.name`. Desktop prepends a filtered Omarchy
-v3.0.2 catalog and appends its sparse graphical adapter catalog. The desktop
-hook:
+redeclare `keystone.terminal.theme.name`. Desktop prepends a filtered catalog
+from Omarchy's `quattro` branch and appends its sparse graphical source
+catalog. Semantic templates render the Mako, SwayOSD, Walker, Wofi, Clipse,
+and Hyprlock adapters into each immutable generation; source catalogs MUST NOT
+carry competing copies. The desktop hook:
 
 1. Writes generated graphical runtime state.
 2. Reloads Hyprland configuration.
-3. Reloads Waybar.
+3. Reloads the Quattro shell.
 4. Restarts Mako and other graphical theme consumers.
 
 ### Composition requirements
@@ -113,7 +114,7 @@ Main Menu
 ├── Apps          → Launch application picker (walker)
 ├── Learn         → Documentation and keybinding reference
 ├── Capture       → Screenshot and screen recording
-├── Toggle        → Quick toggles (idle, nightlight, waybar)
+├── Toggle        → Quick toggles (idle, nightlight, Quattro bar)
 ├── Style         → Theme and wallpaper selection
 │   ├── Theme     → Select a composed theme
 │   └── Background → Select a wallpaper from the current composed theme
@@ -297,6 +298,8 @@ keystone.desktop = {
   photos.enable = false;       # default false; ks.systems/os glue re-enables
   agents.enable = false;       # via keystone.experimental
   integration = {
+    configCheckout = null;      # absolute fleet-config checkout for the optional
+                                # Quattro update indicator; null disables it
     ksPackage = null;          # default: pkgs.keystone.ks or null
     agenixPackage = null;      # default: pkgs.keystone.agenix or null
   };

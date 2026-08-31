@@ -20,6 +20,7 @@ let
     "keystone-toggle"
     "keystone-style"
     "keystone-theme"
+    "keystone-background"
     "keystone-system"
     "keystone-install"
     "keystone-update"

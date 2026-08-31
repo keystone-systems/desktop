@@ -2,21 +2,25 @@
 # setup, update, and wifi flows. Each assertion below encodes a requirement
 # from engineering issue #391 (ISSUE-REQ-1..8). Ported from ks.systems/os
 # during the desktop extraction: script assertions now target
-# modules/home/scripts, and the bind/waybar assertions target the dotfile
+# modules/home/scripts, and the bind assertions target the dotfile
 # templates (the settings-generation modules they used to grep were deleted —
 # templates are the live config surface now).
 { pkgs }:
 pkgs.runCommand "test-desktop-walker-surfaces"
   {
-    nativeBuildInputs = with pkgs; [ gnugrep ];
+    nativeBuildInputs = with pkgs; [
+      coreutils
+      gnugrep
+      gnused
+    ];
   }
   ''
     set -euo pipefail
 
     repo="${../..}"
     scripts="$repo/modules/home/scripts"
+    components="$repo/modules/home/components"
     hyprland_conf="$repo/templates/hyprland/.config/hypr/hyprland.lua"
-    waybar_config="$repo/templates/waybar/.config/waybar/config"
     default_nix="$scripts/default.nix"
     main_menu="$scripts/keystone-main-menu.sh"
     setup_menu="$scripts/keystone-setup-menu.sh"
@@ -31,13 +35,33 @@ pkgs.runCommand "test-desktop-walker-surfaces"
       fail "ISSUE-REQ-2: template \$mod+Escape bind must launch the System menu through UWSM"
     fi
 
-    # ISSUE-REQ-8: Waybar network click must open the Keystone Wi-Fi flow, not nm-connection-editor.
-    if grep -F '"on-click": "nm-connection-editor"' "$waybar_config" >/dev/null; then
-      fail "ISSUE-REQ-8: waybar network on-click must not be 'nm-connection-editor'"
-    fi
-    if ! grep -E '"on-click": "keystone-wifi-menu' "$waybar_config" >/dev/null; then
-      fail "ISSUE-REQ-8: waybar network on-click must invoke 'keystone-wifi-menu'"
-    fi
+    # Every submenu emitted by a backend, and every menus: provider launched by
+    # a script, must resolve to a registered Elephant provider. This catches a
+    # whole class of dead menu links instead of naming only today's providers.
+    {
+      grep -RhoE 'SubMenu: "keystone-[a-z-]+"' "$repo/modules/home" \
+        | sed -E 's/.*"(keystone-[a-z-]+)"/\1/'
+      grep -RhoE 'menus:keystone-[a-z-]+' "$repo/modules/home" \
+        | sed 's/menus://'
+    } | sort -u > "$TMPDIR/emitted-providers"
+    sed -n '/menuNames = \[/,/  \];/p' "$components/launcher.nix" \
+      | grep -oE '"keystone-[a-z-]+"' \
+      | tr -d '"' \
+      | sort -u > "$TMPDIR/registered-providers"
+    while IFS= read -r provider; do
+      grep -Fxq "$provider" "$TMPDIR/registered-providers" \
+        || fail "Elephant provider $provider is emitted but not registered"
+      [[ -f "$components/$provider.lua" ]] \
+        || fail "registered Elephant provider $provider has no Lua source"
+      grep -Fxq "Name = \"$provider\"" "$components/$provider.lua" \
+        || fail "Elephant provider $provider has a mismatched Name"
+    done < "$TMPDIR/emitted-providers"
+
+    grep -Fxq 'Parent = "keystone-style"' "$components/keystone-background.lua" \
+      || fail "keystone-background must be a child of keystone-style"
+    grep -Fq 'keystone-main-menu") .. " background-json' \
+      "$components/keystone-background.lua" \
+      || fail "keystone-background must read background-json"
 
     # ISSUE-REQ-6: Update entry must not be the blocked 'Use nix flake update' placeholder.
     if grep -F 'Use nix flake update for system updates.' "$main_menu" >/dev/null; then

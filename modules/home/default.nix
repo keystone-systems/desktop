@@ -12,6 +12,7 @@ in
   imports = [
     ./components
     ./hyprland.nix
+    ./quattro.nix
     ./scripts
     ./theming
     # The flake wrapper imports ks.systems/terminal before this module.
@@ -130,6 +131,16 @@ in
     # only after an observable lock exists.
 
     integration = {
+      configCheckout = mkOption {
+        type = types.nullOr types.str;
+        default = null;
+        description = ''
+          Absolute path to a Keystone fleet configuration checkout used by
+          the optional Quattro update indicator. When null, the shell receives
+          no checkout environment variable and the indicator stays inactive.
+        '';
+      };
+
       ksPackage = mkOption {
         type = types.nullOr types.package;
         default = pkgs.keystone.ks or null;
@@ -171,6 +182,11 @@ in
       {
         assertion = lib.hasPrefix "/" cfg.health.disk.path;
         message = "keystone.desktop.health.disk.path must be an absolute path";
+      }
+      {
+        assertion =
+          cfg.integration.configCheckout == null || lib.hasPrefix "/" cfg.integration.configCheckout;
+        message = "keystone.desktop.integration.configCheckout must be null or an absolute path";
       }
       {
         assertion = !config.keystone.terminal.sshAutoLoad.enable;

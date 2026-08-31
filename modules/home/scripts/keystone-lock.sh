@@ -39,6 +39,27 @@ log() {
 session=""
 user_name="$(id -un)"
 user_id="$(id -u)"
+if [[ "$startup" == true ]]; then
+  lock_unit="keystone-hyprlock-startup.service"
+else
+  lock_unit="keystone-hyprlock.service"
+fi
+
+startup_lock_active() {
+  systemctl --user is-active --quiet keystone-hyprlock-startup.service
+}
+
+lock_service_active() {
+  # The startup lock is password-only because it also opens the login keyring.
+  # An ordinary request must therefore accept it as the current supervised
+  # client instead of starting the conflicting fingerprint-capable unit. A
+  # startup request is stricter: only the startup unit satisfies that gate.
+  if systemctl --user is-active --quiet "$lock_unit"; then
+    return 0
+  fi
+
+  [[ "$startup" == false ]] && startup_lock_active
+}
 
 session_belongs_to_user() {
   local candidate="$1"
@@ -61,10 +82,14 @@ else
 fi
 
 lock_ready() {
-  # Hyprland v0.56 exposes its ext-session-lock state directly. Do not use
-  # logind's LockedHint or layer-shell surfaces as substitutes: LockedHint can
-  # be stale, and ext-session-lock surfaces are not layer-shell surfaces.
-  hyprctl -j locked 2>/dev/null | jq -e '.locked == true' >/dev/null 2>&1
+  # Hyprland v0.56 exposes its ext-session-lock state directly, but retains
+  # locked=true after a lock client disappears without a clean unlock. Require
+  # both protocol state and a live, user-owned Hyprlock client. Neither signal
+  # is sufficient alone: a stale process can exist before locking, while a
+  # stale compositor bit otherwise suppresses recovery after a client crash.
+  hyprctl -j locked 2>/dev/null | jq -e '.locked == true' >/dev/null 2>&1 \
+    && lock_service_active \
+    && pgrep -u "$user_id" -x hyprlock >/dev/null 2>&1
 }
 
 terminate_session() {
@@ -106,13 +131,18 @@ if lock_ready; then
   exit 0
 fi
 
-log info "launching hyprlock"
-hyprlock_args=(--immediate-render)
-if [[ "$startup" == true ]]; then
-  startup_config="${KEYSTONE_LOCK_STARTUP_CONFIG:?keystone-lock --startup requires a Nix-owned Hyprlock config}"
-  hyprlock_args+=(--config "$startup_config")
+if [[ "$startup" == false ]] && startup_lock_active; then
+  # The startup client is password-only and opens the login keyring. It can be
+  # active before Hyprland reports ext-session-lock readiness, so an ordinary
+  # request must wait for it instead of starting the conflicting fingerprint-
+  # capable unit and replacing the authentication client mid-startup.
+  log info "waiting for keystone-hyprlock-startup.service"
+else
+  log info "starting ${lock_unit}"
+  if ! systemctl --user start "$lock_unit"; then
+    log err "could not start ${lock_unit}"
+  fi
 fi
-hyprlock "${hyprlock_args[@]}" >/dev/null 2>&1 &
 
 # Real lock state stays authoritative: a concurrent launcher may win the
 # ext-session-lock race and establish the lock even if our own child exits.

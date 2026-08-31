@@ -22,6 +22,14 @@ in
       };
       Service = {
         ExecStart = "${lib.getExe pkgs.mako}";
+        Environment = [
+          "PATH=${
+            lib.makeBinPath [
+              pkgs.bash
+              pkgs.mako
+            ]
+          }:${config.home.profileDirectory}/bin"
+        ];
         Restart = "on-failure";
       };
       Install.WantedBy = [ "graphical-session.target" ];

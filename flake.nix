@@ -39,10 +39,15 @@
 
     nix-flatpak.url = "github:gmodena/nix-flatpak";
 
-    # Theming pulls omarchy theme sources.
+    # Quattro is the sole Omarchy source for QML, themes, templates, assets,
+    # and the explicitly allowlisted compatibility scripts.
     omarchy = {
-      url = "github:basecamp/omarchy/v3.0.2";
+      url = "github:basecamp/omarchy/quattro";
       flake = false;
+    };
+    quickshell = {
+      url = "git+https://git.outfoxxed.me/quickshell/quickshell?ref=refs/tags/v0.3.1";
+      inputs.nixpkgs.follows = "nixpkgs";
     };
   };
 
@@ -57,6 +62,7 @@
       walker,
       nix-flatpak,
       omarchy,
+      quickshell,
       ...
     }:
     let
@@ -68,7 +74,12 @@
       # keystoneInputs at HM scope (the documented "defined multiple times"
       # trap when both module trees are active in one HM evaluation).
       desktopInputs = {
-        inherit hyprland hyprpaper omarchy;
+        inherit
+          hyprland
+          hyprpaper
+          omarchy
+          quickshell
+          ;
         terminalThemeCatalog = terminal.lib.templatesPath + "/themes/.config/themes";
         terminalThemeNames = terminal.lib.themeNames;
         desktopSelf = self;

@@ -34,7 +34,7 @@ elif (( percentage_used >= warning_percent )); then
 fi
 
 case "$command" in
-  waybar)
+  json)
     text=""
     if [[ "$health_class" != "healthy" ]]; then
       text="󰋊 ${percentage_used}%"
@@ -75,7 +75,7 @@ case "$command" in
     fi
     ;;
   *)
-    echo "Usage: keystone-disk-monitor [notify|waybar]" >&2
+    echo "Usage: keystone-disk-monitor [notify|json]" >&2
     exit 2
     ;;
 esac

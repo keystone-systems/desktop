@@ -236,8 +236,8 @@ toggle_json() {
       },
       {
         Text: "Top bar",
-        Subtext: "Not implemented yet",
-        Value: "blocked\tTop bar\tTop bar toggle is not implemented yet.",
+        Subtext: "Toggle the Quattro bar",
+        Value: "toggle-bar",
         Icon: "view-more-symbolic"
       }
     ]
@@ -467,6 +467,9 @@ dispatch() {
       ;;
     toggle-nightlight)
       detach "$(keystone_cmd keystone-nightlight-toggle)"
+      ;;
+    toggle-bar)
+      detach "$(keystone_cmd omarchy-toggle-bar)"
       ;;
     theme-select)
       detach "$(keystone_cmd keystone-theme-switch)" "$arg1"

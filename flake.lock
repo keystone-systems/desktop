@@ -861,16 +861,16 @@
     "omarchy": {
       "flake": false,
       "locked": {
-        "lastModified": 1759093827,
-        "narHash": "sha256-1QJBoMe6MzaD/dcOcqC8QpRxG0Z2c1p+WYqtNFlsTOA=",
+        "lastModified": 1787601557,
+        "narHash": "sha256-ju17Zu9I5lIVvVULgTRvzOJmPMtmT2hre06IlNgQRKQ=",
         "owner": "basecamp",
         "repo": "omarchy",
-        "rev": "f634bfeeb6225cf6cd2df9bb336831f81b1c99c6",
+        "rev": "b86d4505c11b71f90b7bd14d6a80676863a70775",
         "type": "github"
       },
       "original": {
         "owner": "basecamp",
-        "ref": "v3.0.2",
+        "ref": "quattro",
         "repo": "omarchy",
         "type": "github"
       }
@@ -961,6 +961,27 @@
         "type": "github"
       }
     },
+    "quickshell": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1787279335,
+        "narHash": "sha256-CLX2Zp5i5BuLbOxNOkwRd9YY84IOrACNxBV79o9/F9Y=",
+        "ref": "refs/tags/v0.3.1",
+        "rev": "1a4716cde794a59928d9d9fc15f2afc7a95de360",
+        "revCount": 846,
+        "type": "git",
+        "url": "https://git.outfoxxed.me/quickshell/quickshell"
+      },
+      "original": {
+        "ref": "refs/tags/v0.3.1",
+        "type": "git",
+        "url": "https://git.outfoxxed.me/quickshell/quickshell"
+      }
+    },
     "root": {
       "inputs": {
         "home-manager": "home-manager",
@@ -969,6 +990,7 @@
         "nix-flatpak": "nix-flatpak",
         "nixpkgs": "nixpkgs_2",
         "omarchy": "omarchy",
+        "quickshell": "quickshell",
         "terminal": "terminal",
         "walker": "walker"
       }
@@ -1102,11 +1124,11 @@
         "nixpkgs-x86-darwin": "nixpkgs-x86-darwin"
       },
       "locked": {
-        "lastModified": 1787624385,
-        "narHash": "sha256-EpInpPtSGfVN7J+sQAfLGy58B1DIT292Jeaxu4CDY64=",
+        "lastModified": 1788150120,
+        "narHash": "sha256-nA411RgUEo8L23LRduL4ghA6oJVL1SCs1WNst7P1fpY=",
         "ref": "refs/heads/main",
-        "rev": "54272eea602fe2f2da376b24e3125d090ec337cf",
-        "revCount": 8,
+        "rev": "0c00ceb67331f2d96b4a75979dc4bb3524a078e3",
+        "revCount": 9,
         "type": "git",
         "url": "ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git"
       },

@@ -50,6 +50,18 @@ case "${1:-main}" in
   theme | Theme)
     exec "$(keystone_cmd keystone-main-menu)" open-menu theme
     ;;
+  background | Background)
+    exec "$(keystone_cmd keystone-main-menu)" open-menu background
+    ;;
+  monitors | Monitors)
+    exec "$(keystone_cmd keystone-monitor-menu)" open-menu
+    ;;
+  wifi | Wifi | network | Network)
+    exec "$(keystone_cmd keystone-wifi-menu)" open-menu
+    ;;
+  audio | Audio)
+    exec "$(keystone_cmd keystone-audio-menu)" open-menu
+    ;;
   *)
     exec "$(keystone_cmd keystone-main-menu)" open-menu
     ;;

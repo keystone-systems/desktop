@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "bar": {
+    "position": "top",
+    "transparent": false,
+    "centerAnchor": "omarchy.clock",
+    "layout": {
+      "left": [{"id":"omarchy.menu"},{"id":"omarchy.workspaces"}],
+      "center": [
+        {"id":"omarchy.media"},{"id":"omarchy.clock","format":"dddd HH:mm"},
+        {"id":"omarchy.keyboard-layout"},{"id":"omarchy.weather"},
+        {"id":"omarchy.system-update","exec":"omarchy-update-available","onClick":"omarchy-update"},
+        {"id":"keystone.voice","type":"command","exec":"omarchy-keystone-voice","interval":2,"onClick":"keystone-menu capture"},
+        {"id":"keystone.recording","type":"command","exec":"omarchy-keystone-recording","interval":2,"onClick":"keystone-menu capture"}
+      ],
+      "right": [
+        {"id":"omarchy.tray"},{"id":"omarchy.agents"},{"id":"omarchy.bluetooth"},
+        {"id":"omarchy.network"},{"id":"omarchy.audio"},{"id":"omarchy.monitor"},
+        {"id":"keystone.health","type":"command","exec":"omarchy-keystone-health","interval":30},
+        {"id":"omarchy.power"}
+      ]
+    }
+  },
+  "disabledPlugins": [
+    "omarchy.background","omarchy.clipboard","omarchy.emojis","omarchy.reminders",
+    "omarchy.lock","omarchy.idle","omarchy.notifications","omarchy.osd","omarchy.polkit",
+    "omarchy.nightlight","omarchy.dev-gallery"
+  ],
+  "plugins": []
+}

@@ -25,6 +25,9 @@ hl.config({
   },
   master = { new_status = "master" },
   misc = {
+    -- Keep the compositor fail-closed if Hyprlock dies, but permit the
+    -- supervised replacement client to take ownership of that locked session.
+    allow_session_lock_restore = true,
     disable_hyprland_logo = true,
     disable_splash_rendering = true,
     disable_watchdog_warning = true,
@@ -116,7 +119,7 @@ bind(mod .. " + V", hl.dsp.send_shortcut({ mods = "SHIFT", key = "Insert" }))
 bind(mod .. " + X", hl.dsp.send_shortcut({ mods = "CTRL", key = "X" }))
 bind(mod .. " + CTRL + V", hl.dsp.exec_cmd(app .. "ghostty --class clipse -e clipse"))
 bind(mod .. " + CTRL + E", hl.dsp.exec_cmd(app .. "walker -m symbols"))
-bind(mod .. " + SHIFT + Space", hl.dsp.exec_cmd("killall -SIGUSR1 waybar"))
+bind(mod .. " + SHIFT + Space", hl.dsp.exec_cmd("omarchy-toggle-bar"))
 bind(mod .. " + Backspace", hl.dsp.window.set_prop({ prop = "opaque", value = "toggle" }))
 bind(mod .. " + SHIFT + N", hl.dsp.exec_cmd("makoctl dismiss"))
 bind(mod .. " + ALT + N", hl.dsp.exec_cmd("makoctl dismiss --all"))
@@ -172,6 +175,7 @@ window_rule("youtube-app-opacity", { class = "^(chrome-youtube.*-Default)$" }, {
 window_rule("media-opacity", { class = "^(zoom|vlc|org.kde.kdenlive|com.obsproject.Studio)$" }, { opacity = "1 1" })
 window_rule("game-opacity", { class = "^(com.libretro.RetroArch|steam)$" }, { opacity = "1 1" })
 window_rule("clipse-float", { class = "(clipse)" }, { float = true, size = { 622, 652 } })
+window_rule("omarchy-terminal", { class = "^(org.omarchy.terminal)$" }, { float = true, center = true, size = { 875, 600 } })
 window_rule("notes-inbox", { class = "^(com.mitchellh.ghostty)$", title = "^(keystone-notes-inbox)$" }, { float = true, center = true, size = { 1000, 700 } })
 window_rule("authentication", { class = "^$", title = "^(Authentication required)$" }, {
   float = true, center = true, size = { 486, 246 }, pin = true, opacity = "0.85 0.78", rounding = 12,

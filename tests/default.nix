@@ -74,12 +74,14 @@ let
   );
 
   # Every binary the templates invoke by bare name (hyprland.lua binds,
-  # hypridle.conf hooks, and waybar on-click handlers). These MUST be
+  # hypridle.conf hooks, and shell command widgets). These MUST be
   # OS-level packages — the stowed configs run outside any HM wrapper PATH.
   # Guards the extraction risk of silently losing a binary that was HM-only
   # before (e.g. hyprpicker).
   templateBinaries = [
-    "waybar"
+    # The pinned flake names its package quickshell-wrapped while providing
+    # the bare `quickshell` command used by the Quattro launcher.
+    "quickshell-wrapped"
     "wofi"
     "mako"
     "hyprlock"
@@ -113,6 +115,7 @@ let
     hyprctl = evalHyprland.config.programs.hyprland.package;
   };
   hypridleUnitText = evalHyprland.config.systemd.user.units."hypridle.service".text;
+  dpmsWakeText = evalHyprland.pkgs.keystone-desktop.keystone-dpms-wake.text;
   # Matching each package's real store path keeps this exact (no version
   # guessing) and keeps the comparison at eval time: only the plain command
   # names survive into the derivation, so the check never pulls the compositor
@@ -170,6 +173,41 @@ let
       ];
     };
 
+  # homeManagerConfiguration always applies the assertions gate before
+  # exposing config, while its `check` argument controls module type checking.
+  # Reproduce Home Manager's raw module evaluation with check=false only for
+  # the intentional assertion-failure fixture below.
+  uncheckedHomeLib = import "${home-manager}/modules/lib/stdlib-extended.nix" lib;
+  uncheckedHomeModules = import "${home-manager}/modules/modules.nix" {
+    inherit pkgs;
+    check = false;
+    lib = uncheckedHomeLib;
+  };
+  mkUncheckedHomeConfig =
+    module:
+    uncheckedHomeLib.evalModules {
+      class = "homeManager";
+      modules = [
+        {
+          imports = [
+            self.homeModules.default
+            {
+              home.username = "testuser";
+              home.homeDirectory = "/home/testuser";
+              home.stateVersion = "25.05";
+              nixpkgs = {
+                config = lib.mkDefault pkgs.config;
+                inherit (pkgs) overlays;
+              };
+            }
+            module
+          ];
+        }
+      ]
+      ++ uncheckedHomeModules;
+      specialArgs.modulesPath = "${home-manager}/modules";
+    };
+
   # Includes the terminal overlay, but not the ks.systems/os overlay. This
   # proves that the integration options (ksPackage/agenixPackage) are
   # null-tolerant. Forcing every home.packages name and user unit instantiates
@@ -183,7 +221,7 @@ let
   # A desktop must refuse terminal SSH auto-load outright: it would start a
   # second agent against a second passphrase store. Matched on the message so
   # an unrelated assertion failure cannot make this pass vacuously.
-  homeSshAutoLoadConflict = mkHomeConfig {
+  homeSshAutoLoadConflict = mkUncheckedHomeConfig {
     keystone.desktop.enable = true;
     keystone.terminal.sshAutoLoad.enable = true;
   };
@@ -208,9 +246,33 @@ let
   graphicalContractPaths = lib.unique (
     homeStandalone.config.keystone.terminal.theme.requiredPaths ++ graphicalAdapterSources
   );
+  themeRenderHook = builtins.head homeStandalone.config.keystone.terminal.theme.renderHooks;
+  themePostSwitchHook =
+    lib.findFirst (hook: lib.getName hook == "keystone-theme-hook")
+      (throw "desktop theme hook is missing")
+      homeStandalone.config.keystone.terminal.theme.postSwitchHooks;
+  writePolkitThemePackage = pkgs.keystone-desktop.write-polkit-theme;
   makoAdapters = lib.filter (adapter: adapter.source == "mako.ini") themeAdapters;
   homeStandaloneUnits = lib.attrNames homeStandalone.config.systemd.user.services;
   startupLockUnit = homeStandalone.config.systemd.user.services.keystone-startup-lock;
+  omarchyShellUnit = homeStandalone.config.systemd.user.services.omarchy-shell;
+  makoUnit = homeStandalone.config.systemd.user.services.mako;
+  omarchyRuntime = builtins.dirOf (builtins.dirOf (builtins.head omarchyShellUnit.Service.ExecStart));
+  omarchyRuntimePackage = lib.findFirst (
+    package: lib.getName package == "keystone-omarchy-quattro-runtime"
+  ) (throw "Quattro runtime package is missing") evalHyprland.config.environment.systemPackages;
+  templateRuntimeCommands = [
+    "omarchy-toggle-bar"
+    "omarchy-launch-floating-terminal-with-presentation"
+    "omarchy-update"
+  ];
+  quattroRuntimeInstalled = lib.elem "keystone-omarchy-quattro-runtime" systemPackageNames;
+  omarchyShellPath = lib.findFirst (
+    value: lib.hasPrefix "PATH=" value
+  ) "" omarchyShellUnit.Service.Environment;
+  makoServicePath = lib.findFirst (
+    value: lib.hasPrefix "PATH=" value
+  ) "" makoUnit.Service.Environment;
   persistentGraphicalServices = [
     "hypridle"
     "hyprpaper"
@@ -218,7 +280,7 @@ let
     "hyprpolkitagent"
     "mako"
     "swayosd"
-    "waybar"
+    "omarchy-shell"
     "wl-clip-persist"
     "clipse-listen"
     "walker"
@@ -315,7 +377,11 @@ let
   ];
 
   actualStandaloneCommands = lib.sort lib.lessThan (
-    lib.unique (lib.filter (lib.hasPrefix "keystone-") homeStandalonePackageNames)
+    lib.unique (
+      lib.filter (
+        name: lib.hasPrefix "keystone-" name && name != "keystone-omarchy-quattro-runtime"
+      ) homeStandalonePackageNames
+    )
   );
   missingStandaloneCommands = lib.subtractLists actualStandaloneCommands expectedStandaloneCommands;
   unexpectedStandaloneCommands = lib.subtractLists expectedStandaloneCommands actualStandaloneCommands;
@@ -339,6 +405,7 @@ let
       };
       printer.default = "test-printer";
       integration = {
+        configCheckout = "/srv/keystone-config";
         ksPackage = pkgs.hello;
         agenixPackage = pkgs.hello;
       };
@@ -348,6 +415,8 @@ let
     audio = homeFull.config.systemd.user.services.keystone-audio-defaults;
     printer = homeFull.config.systemd.user.services.keystone-printer-default;
   };
+  configuredOmarchyShellEnvironment =
+    homeFull.config.systemd.user.services.omarchy-shell.Service.Environment;
   renderServiceValue = value: if builtins.isList value then lib.concatStringsSep " " value else value;
   configuredDefaultServiceErrors = lib.filter (error: error != null) (
     lib.mapAttrsToList (
@@ -372,7 +441,6 @@ let
   # recreates the stow-collision class the extraction eliminated.
   stowedConfigDirs = [
     "hypr"
-    "waybar"
     "wofi"
     "walker"
   ];
@@ -395,11 +463,11 @@ let
   startupPamText = evalHyprland.config.security.pam.services.hyprlock-startup.text;
   passwdPamText = evalHyprland.config.security.pam.services.passwd.text;
   logindSettings = evalHyprland.config.services.logind.settings.Login;
+  upowerEnabled = evalHyprland.config.services.upower.enable;
 in
 {
   # No personal literal may survive the template scrub: absolute home paths,
-  # the upstream author's identity, hardware serials, or personal waybar
-  # modules.
+  # the upstream author's identity, hardware serials, or personal modules.
   template-lint =
     pkgs.runCommand "template-lint"
       {
@@ -417,7 +485,15 @@ in
   theme-graphical-contract =
     pkgs.runCommand "theme-graphical-contract"
       {
-        nativeBuildInputs = [ pkgs.findutils ];
+        nativeBuildInputs = [
+          pkgs.coreutils
+          pkgs.findutils
+          pkgs.gnugrep
+          pkgs.jq
+          pkgs.mako
+          writePolkitThemePackage
+          themeRenderHook
+        ];
       }
       ''
         themes=${templates}/themes/.config/themes
@@ -429,9 +505,78 @@ in
           exit 1
         }
 
+        semantic_templates=${../modules/home/theming/templates}
+        while IFS= read -r adapter; do
+          catalog_adapters="$(find "$themes" -type f -name "$adapter" -print)"
+          if [ -n "$catalog_adapters" ]; then
+            echo "FAIL: desktop catalog still owns generated adapter $adapter:" >&2
+            echo "$catalog_adapters" >&2
+            exit 1
+          fi
+        done < <(find "$semantic_templates" -type f -name '*.tpl' -printf '%f\n' \
+          | sed 's/\.tpl$//' | sort)
+        catalog_clip_legacy="$(find "$themes" -type f -name clipse.json -print)"
+        if [ -n "$catalog_clip_legacy" ]; then
+          echo "FAIL: desktop catalog still carries the retired Clipse JSON adapter:" >&2
+          echo "$catalog_clip_legacy" >&2
+          exit 1
+        fi
+
         for theme in $expected; do
+          generation="$TMPDIR/rendered/$theme"
+          mkdir -p "$generation"
+          for source in "${terminal.lib.templatesPath}/themes/.config/themes/$theme" "${omarchy}/themes/$theme" "$themes/$theme"; do
+            if [ -d "$source" ]; then
+              cp -r "$source"/. "$generation"/
+              chmod -R u+w "$generation"
+            fi
+          done
+          keystone-theme-render "$theme" "$generation"
+          if grep -q '^include=' "$generation/mako.ini"; then
+            echo "FAIL: $theme Mako adapter still depends on an external include" >&2
+            exit 1
+          fi
+          grep -Fq "on-button-left=exec sh -c 'makoctl dismiss --all; keystone-menu wifi'" \
+            "$generation/mako.ini" || {
+            echo "FAIL: $theme Mako adapter omits the product-owned Wi-Fi action" >&2
+            exit 1
+          }
+          grep -Fq "on-button-left=exec sh -c 'makoctl dismiss --all; omarchy-launch-floating-terminal-with-presentation omarchy-update'" \
+            "$generation/mako.ini" || {
+            echo "FAIL: $theme Mako adapter omits the product-owned update action" >&2
+            exit 1
+          }
+          grep -Eq '^background-color=#[0-9a-fA-F]{6}$' "$generation/mako.ini" || {
+            echo "FAIL: $theme Mako adapter does not contain a rendered semantic background" >&2
+            exit 1
+          }
+          if grep -q '{{' "$generation/mako.ini"; then
+            echo "FAIL: $theme Mako adapter contains unresolved template values" >&2
+            exit 1
+          fi
+          for variable in color inner_color outer_color font_color check_color; do
+            grep -Eq '^\$'"$variable"'[[:space:]]*=[[:space:]]*rgba?\([^)]+\)$' \
+              "$generation/hyprlock.conf" || {
+              echo "FAIL: $theme does not render Hyprlock variable \$$variable" >&2
+              exit 1
+            }
+          done
+          if grep -Ev '^\$(color|inner_color|outer_color|font_color|check_color)[[:space:]]*=[[:space:]]*rgba?\([^)]+\)$|^[[:space:]]*$' \
+            "$generation/hyprlock.conf"; then
+            echo "FAIL: $theme renders non-palette Hyprlock configuration" >&2
+            exit 1
+          fi
+          if [ "$(grep -Ec '^\$' "$generation/hyprlock.conf")" -ne 5 ] \
+            || grep -q '{{' "$generation/hyprlock.conf"; then
+            echo "FAIL: $theme Hyprlock palette is incomplete or unresolved" >&2
+            exit 1
+          fi
+          if grep -Eq '^\$[^=]+=[[:space:]]*rgb\(#' "$generation/hyprlock.conf"; then
+            echo "FAIL: $theme leaves comment-prefixed hex in a Hyprlock variable" >&2
+            exit 1
+          fi
           for path in ${lib.concatStringsSep " " graphicalContractPaths}; do
-            test -e "$themes/$theme/$path" || test -e "${omarchy}/themes/$theme/$path" || {
+            test -e "$generation/$path" || {
               echo "FAIL: $theme does not contain $path" >&2
               exit 1
             }
@@ -443,6 +588,85 @@ in
             }
           done
         done
+
+        # Mako 1.11 parses configuration before attempting D-Bus or Wayland.
+        # Run it with deliberately nonexistent isolated endpoints: reaching the
+        # connection failure without "Failed to parse config" proves the
+        # complete generated adapter is loadable without touching the session.
+        mako_home="$TMPDIR/mako-home"
+        mako_runtime="$TMPDIR/mako-runtime"
+        mkdir -p "$mako_home" "$mako_runtime"
+        probe_mako_config() {
+          local config_file="$1"
+          local error_log="$2"
+          local status
+          set +e
+          HOME="$mako_home" \
+            XDG_RUNTIME_DIR="$mako_runtime" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$TMPDIR/missing-bus" \
+            WAYLAND_DISPLAY=keystone-missing \
+            timeout --kill-after=1s 2s ${pkgs.mako}/bin/mako \
+              --config "$config_file" > /dev/null 2> "$error_log"
+          status=$?
+          set -e
+          test "$status" -ne 0 || {
+            echo "FAIL: isolated Mako unexpectedly stayed running" >&2
+            exit 1
+          }
+        }
+
+        invalid_mako="$TMPDIR/invalid-mako.ini"
+        printf '%s\n' 'keystone-invalid-option=true' > "$invalid_mako"
+        probe_mako_config "$invalid_mako" "$TMPDIR/invalid-mako.log"
+        grep -Fq 'Failed to parse config' "$TMPDIR/invalid-mako.log" || {
+          echo "FAIL: pinned Mako probe cannot detect an invalid config" >&2
+          exit 1
+        }
+
+        rendered_mako="$TMPDIR/rendered/$theme/mako.ini"
+        probe_mako_config "$rendered_mako" "$TMPDIR/rendered-mako.log"
+        if grep -Eq 'Failed to parse config|Unable to open .* for reading' \
+          "$TMPDIR/rendered-mako.log"; then
+          echo "FAIL: pinned Mako cannot load the self-contained generated adapter" >&2
+          cat "$TMPDIR/rendered-mako.log" >&2
+          exit 1
+        fi
+
+        # Pin the current include semantics as an upstream compatibility fact,
+        # even though the production generation no longer depends on them.
+        cp ${templates}/themes/.local/share/omarchy/default/mako/core.ini \
+          "$mako_home/core.ini"
+        printf '%s\n' 'include=~/core.ini' > "$TMPDIR/included-mako.ini"
+        probe_mako_config "$TMPDIR/included-mako.ini" "$TMPDIR/included-mako.log"
+        if grep -Eq 'Failed to parse config|Unable to open .* for reading' \
+          "$TMPDIR/included-mako.log"; then
+          echo "FAIL: pinned Mako no longer expands and loads include=~/..." >&2
+          cat "$TMPDIR/included-mako.log" >&2
+          exit 1
+        fi
+
+        semantic="$TMPDIR/semantic-theme"
+        mkdir -p "$semantic"
+        cat > "$semantic/colors.toml" <<'EOF'
+        background = "#010203"
+        lighter_background = "#111213"
+        foreground = "#f1f2f3"
+        muted = "#818283"
+        accent = "#a1a2a3"
+        red = "#d1d2d3"
+        mode = "light"
+        EOF
+        printf '%s\n' '$color = rgb(000000)' > "$semantic/hyprlock.conf"
+        keystone-write-polkit-theme "$semantic" "$semantic/polkit.json"
+        jq -e '
+          .background == "#010203" and
+          .surface == "#111213" and
+          .text == "#f1f2f3" and
+          .mutedText == "#818283" and
+          .accent == "#a1a2a3" and
+          .error == "#d1d2d3" and
+          .light == true
+        ' "$semantic/polkit.json" >/dev/null
 
         actual="$(find "$themes" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' | sort | tr '\n' ' ' | sed 's/ $//')"
         expected_sorted="$(printf '%s\n' $expected | sort | tr '\n' ' ' | sed 's/ $//')"
@@ -493,6 +717,21 @@ in
       ''
         if [ -n "$overlap" ]; then
           echo "FAIL: terminal and desktop templates overlap: $overlap" >&2
+          exit 1
+        fi
+        touch "$out"
+      '';
+
+  retired-bar-surfaces =
+    pkgs.runCommand "retired-bar-surfaces"
+      {
+        nativeBuildInputs = [ pkgs.ripgrep ];
+      }
+      ''
+        legacy='[Ww][Aa][Yy][Bb][Aa][Rr]'
+        if rg -n "$legacy" \
+          ${../modules} ${templates} ${../lib} ${../pkgs} ${../tests} ${../flake.nix}; then
+          echo "FAIL: retired shell-bar integration remains in an executable or test surface" >&2
           exit 1
         fi
         touch "$out"
@@ -581,16 +820,362 @@ in
         touch "$out"
       '';
 
+  quattro-runtime-contract =
+    pkgs.runCommand "quattro-runtime-contract"
+      {
+        nativeBuildInputs = [
+          pkgs.coreutils
+          pkgs.git
+          pkgs.jq
+          pkgs.gnugrep
+        ];
+        shellExecStartCount = toString (lib.length omarchyShellUnit.Service.ExecStart);
+        inherit omarchyShellPath;
+        expectedRuntimeCommands = lib.concatStringsSep "\n" omarchyRuntimePackage.runtimeCommandNames;
+        passAsFile = [ "expectedRuntimeCommands" ];
+        themeHook = themePostSwitchHook;
+        homeProfileBin = "${homeStandalone.config.home.profileDirectory}/bin";
+        standaloneShellEnvironment = lib.concatStringsSep "\n" omarchyShellUnit.Service.Environment;
+        configuredShellEnvironment = lib.concatStringsSep "\n" configuredOmarchyShellEnvironment;
+      }
+      ''
+        runtime=${omarchyRuntime}
+        shell_config=${templates}/omarchy/.config/omarchy/shell.json
+        test -x "$runtime/bin/omarchy-launch-shell"
+        test -x "$runtime/bin/omarchy-shell"
+        test -x "$runtime/bin/omarchy-theme-set-templates"
+        test -x "$runtime/bin/omarchy-toggle"
+        test -x "$runtime/bin/omarchy-toggle-bar"
+        test "$shellExecStartCount" = 1
+        case "$omarchyShellPath" in
+          PATH="$runtime/bin":"$homeProfileBin":/run/current-system/sw/bin:*) ;;
+          *) echo "FAIL: omarchy-shell PATH is not rooted in runtime, Home Manager, and the system profile: $omarchyShellPath" >&2; exit 1 ;;
+        esac
+        case "$omarchyShellPath" in
+          *${pkgs.xdg-utils}/bin*) ;;
+          *) echo "FAIL: omarchy-shell PATH omits xdg-utils" >&2; exit 1 ;;
+        esac
+        test ! -e "$runtime/bin/pacman"
+        test ! -e "$runtime/bin/yay"
+        find "$runtime/bin" -mindepth 1 -maxdepth 1 \
+          \( -type f -o -type l \) -printf '%f\n' | sort \
+          > "$TMPDIR/actual-runtime-commands"
+        sort "$expectedRuntimeCommandsPath" > "$TMPDIR/expected-runtime-commands"
+        diff -u "$TMPDIR/expected-runtime-commands" "$TMPDIR/actual-runtime-commands"
+        if grep -R -nE '(^|[^[:alnum:]_])(pacman|yay)([^[:alnum:]_]|$)|/(usr|etc)/' "$runtime/bin"; then
+          echo "FAIL: curated runtime retains an Arch or privileged-filesystem assumption" >&2
+          exit 1
+        fi
+        jq -e '.disabledPlugins | length == 11' "$shell_config" >/dev/null
+        jq -e '.bar.layout.left == [{"id":"omarchy.menu"},{"id":"omarchy.workspaces"}]' "$shell_config" >/dev/null
+        jq -e '.bar.layout.center[] | select(.id == "keystone.voice" and .type == "command")' "$shell_config" >/dev/null
+        jq -e '.bar.layout.center[] | select(.id == "keystone.recording" and .type == "command")' "$shell_config" >/dev/null
+        jq -e '.bar.layout.right[] | select(.id == "keystone.health" and .type == "command")' "$shell_config" >/dev/null
+        jq -e '[.bar.layout.center[] | select(.id | startswith("keystone.")) | select(.onClick == "keystone-menu capture")] | length == 2' "$shell_config" >/dev/null
+        jq -e '
+          .["trigger.capture"].action == "keystone-menu capture"
+          and .["trigger.toggle"].action == "keystone-menu toggle"
+          and .["style.theme"].action == "keystone-menu theme"
+          and .["style.background"].action == "keystone-menu background"
+          and .["setup.monitors"].action == "keystone-menu monitors"
+          and .["setup.network"].action == "keystone-menu wifi"
+          and .["setup.audio"].action == "keystone-menu audio"
+        ' ${../modules/home/quattro-menu.jsonc} >/dev/null
+        grep -Fq 'data.text === undefined || data.text === null' "$runtime/shell/plugins/bar/Bar.qml"
+        if grep -q '^KEYSTONE_CONFIG_CHECKOUT=' <<<"$standaloneShellEnvironment"; then
+          echo "FAIL: standalone shell received a config checkout" >&2
+          exit 1
+        fi
+        grep -Fqx 'KEYSTONE_CONFIG_CHECKOUT=/srv/keystone-config' \
+          <<<"$configuredShellEnvironment"
+        if grep -R -n 'repos/ncrmro/ks-config' ${../lib} ${../modules} ${../templates}; then
+          echo "FAIL: public desktop surfaces retain a personal config checkout" >&2
+          exit 1
+        fi
+
+        mkdir -p "$TMPDIR/fake-bin"
+
+        # The pinned upstream uses `omarchy-shell shell reloadConfig`, and its
+        # CLI accepts `-q` before the target. Exercise the packaged copy and
+        # assert the exact argv it forwards to Quickshell IPC.
+        grep -Fq 'omarchy-shell shell reloadConfig' ${omarchy}/bin/omarchy-shell-config
+        grep -Fq 'omarchy-shell -q shell reloadConfig 2>/dev/null || true' \
+          "$themeHook/bin/keystone-theme-hook"
+        mkdir -p "$TMPDIR/ipc-bin"
+        cat > "$TMPDIR/ipc-bin/timeout" <<'EOF'
+        #!${pkgs.runtimeShell}
+        printf '%s\n' "$@" > "$SHELL_IPC_LOG"
+        printf '%s\n' ok
+        EOF
+        chmod +x "$TMPDIR/ipc-bin/timeout"
+        SHELL_IPC_LOG="$TMPDIR/shell-ipc.log" \
+          OMARCHY_PATH="$runtime" \
+          WAYLAND_DISPLAY=keystone-test \
+          XDG_RUNTIME_DIR="$TMPDIR/runtime" \
+          PATH="$TMPDIR/ipc-bin" \
+          "$runtime/bin/omarchy-shell" -q shell reloadConfig
+        printf '%s\n' \
+          '--kill-after=1s' \
+          '2s' \
+          'qs' \
+          'ipc' \
+          '-n' \
+          '-p' \
+          "$runtime/shell" \
+          'call' \
+          '--' \
+          'shell' \
+          'reloadConfig' \
+          > "$TMPDIR/expected-shell-ipc.log"
+        diff -u "$TMPDIR/expected-shell-ipc.log" "$TMPDIR/shell-ipc.log"
+
+        recording_pid=
+        voice_pid=
+        cleanup_widgets() {
+          for pid in "$recording_pid" "$voice_pid"; do
+            if [ -n "$pid" ]; then
+              kill "$pid" 2>/dev/null || true
+              wait "$pid" 2>/dev/null || true
+            fi
+          done
+        }
+        trap cleanup_widgets EXIT
+
+        cat > "$TMPDIR/fake-bin/keystone-main-menu" <<'EOF'
+        #!${pkgs.runtimeShell}
+        printf '%s %s\n' "''${0##*/}" "$*"
+        EOF
+        chmod +x "$TMPDIR/fake-bin/keystone-main-menu"
+        for backend in keystone-monitor-menu keystone-wifi-menu keystone-audio-menu; do
+          ln -s keystone-main-menu "$TMPDIR/fake-bin/$backend"
+        done
+        invoke_menu() {
+          HOME="$TMPDIR/home" PATH="$TMPDIR/fake-bin:$PATH" \
+            ${pkgs.bash}/bin/bash ${../modules/home/scripts/keystone-menu.sh} "$1"
+        }
+        test "$(invoke_menu theme)" = "keystone-main-menu open-menu theme"
+        test "$(invoke_menu background)" = "keystone-main-menu open-menu background"
+        test "$(invoke_menu monitors)" = "keystone-monitor-menu open-menu"
+        test "$(invoke_menu wifi)" = "keystone-wifi-menu open-menu"
+        test "$(invoke_menu network)" = "keystone-wifi-menu open-menu"
+        test "$(invoke_menu audio)" = "keystone-audio-menu open-menu"
+
+        bluetooth_log="$TMPDIR/bluetooth.log"
+        cat > "$TMPDIR/fake-bin/bluetoothctl" <<'EOF'
+        #!${pkgs.runtimeShell}
+        printf '%s\n' "$*" >> "$TEST_BLUETOOTH_LOG"
+        if [ "''${TEST_BLUETOOTH_FAIL_FIRST_ON:-}" = 1 ] \
+          && [ "$*" = "power on" ] \
+          && [ ! -e "$TEST_BLUETOOTH_FAILURE_MARKER" ]; then
+          touch "$TEST_BLUETOOTH_FAILURE_MARKER"
+          exit 1
+        fi
+        EOF
+        chmod +x "$TMPDIR/fake-bin/bluetoothctl"
+        TEST_BLUETOOTH_LOG="$bluetooth_log" \
+          KEYSTONE_BLUETOOTHCTL_BIN="$TMPDIR/fake-bin/bluetoothctl" \
+          "$runtime/bin/omarchy-restart-bluetooth"
+        printf '%s\n' 'power off' 'power on' > "$TMPDIR/expected-bluetooth.log"
+        diff -u "$TMPDIR/expected-bluetooth.log" "$bluetooth_log"
+        : > "$bluetooth_log"
+        if TEST_BLUETOOTH_LOG="$bluetooth_log" \
+          TEST_BLUETOOTH_FAIL_FIRST_ON=1 \
+          TEST_BLUETOOTH_FAILURE_MARKER="$TMPDIR/bluetooth-first-on-failed" \
+          KEYSTONE_BLUETOOTHCTL_BIN="$TMPDIR/fake-bin/bluetoothctl" \
+          "$runtime/bin/omarchy-restart-bluetooth"; then
+          echo "FAIL: Bluetooth restart hid a failed power-on attempt" >&2
+          exit 1
+        fi
+        printf '%s\n' 'power off' 'power on' 'power on' \
+          > "$TMPDIR/expected-bluetooth.log"
+        diff -u "$TMPDIR/expected-bluetooth.log" "$bluetooth_log"
+
+        ghostty_log="$TMPDIR/ghostty.log"
+        cat > "$TMPDIR/fake-bin/ghostty" <<'EOF'
+        #!${pkgs.runtimeShell}
+        printf '%s\n' "$@" > "$TEST_GHOSTTY_LOG"
+        EOF
+        chmod +x "$TMPDIR/fake-bin/ghostty"
+        TEST_GHOSTTY_LOG="$ghostty_log" \
+          KEYSTONE_GHOSTTY_BIN="$TMPDIR/fake-bin/ghostty" \
+          "$runtime/bin/omarchy-launch-floating-terminal-with-presentation" \
+          printf visible
+        printf '%s\n' \
+          '--class=org.omarchy.terminal' \
+          '--title=Omarchy' \
+          '-e' \
+          'bash' \
+          '-lc' \
+          'printf visible ' > "$TMPDIR/expected-ghostty.log"
+        diff -u "$TMPDIR/expected-ghostty.log" "$ghostty_log"
+        TEST_GHOSTTY_LOG="$ghostty_log" \
+          KEYSTONE_GHOSTTY_BIN="$TMPDIR/fake-bin/ghostty" \
+          "$runtime/bin/omarchy-launch-floating-terminal-with-presentation" \
+          "omarchy-dns Custom"
+        test "$(tail -n 1 "$ghostty_log")" = "omarchy-dns Custom"
+        if KEYSTONE_GHOSTTY_BIN="$TMPDIR/fake-bin/ghostty" \
+          "$runtime/bin/omarchy-launch-floating-terminal-with-presentation"; then
+          echo "FAIL: floating terminal accepted an empty command" >&2
+          exit 1
+        fi
+
+        grep -R -l 'omarchy-launch-floating-terminal-with-presentation' "$runtime/shell" \
+          | sed "s#$runtime/##" | sort > "$TMPDIR/floating-terminal-callers"
+        printf '%s\n' \
+          'shell/plugins/bar/widgets/SystemUpdate.qml' \
+          'shell/plugins/panels/network/Panel.qml' \
+          > "$TMPDIR/expected-floating-terminal-callers"
+        diff -u "$TMPDIR/expected-floating-terminal-callers" \
+          "$TMPDIR/floating-terminal-callers"
+
+        cat > "$TMPDIR/fake-bin/keystone-disk-monitor" <<'EOF'
+        #!${pkgs.runtimeShell}
+        test "$1" = json
+        printf '%s\n' '{"text":"","class":"healthy","tooltip":"ok"}'
+        EOF
+        chmod +x "$TMPDIR/fake-bin/keystone-disk-monitor"
+        PATH="$TMPDIR/fake-bin:$PATH" "$runtime/bin/omarchy-keystone-health" \
+          | jq -e '.class == "healthy"' >/dev/null
+
+        idle_recording="$($runtime/bin/omarchy-keystone-recording)"
+        jq -e '.text == "" and .tooltip == "Screen recording idle"' \
+          <<<"$idle_recording" >/dev/null
+        ${pkgs.coreutils}/bin/mkfifo "$TMPDIR/recording-blocker"
+        ${pkgs.bash}/bin/bash -c \
+          'read -r _ <"$1"' /nix/store/test/bin/gpu-screen-recorder \
+          "$TMPDIR/recording-blocker" &
+        recording_pid=$!
+        for _ in $(${pkgs.coreutils}/bin/seq 1 20); do
+          active_recording="$($runtime/bin/omarchy-keystone-recording)"
+          jq -e '.class == "recording"' <<<"$active_recording" >/dev/null && break
+          ${pkgs.coreutils}/bin/sleep 0.05
+        done
+        jq -e '.text != "" and .class == "recording"' \
+          <<<"$active_recording" >/dev/null
+        kill "$recording_pid"
+        wait "$recording_pid" 2>/dev/null || true
+        recording_pid=
+
+        idle_voice="$($runtime/bin/omarchy-keystone-voice)"
+        jq -e '.tooltip == "Voice memo idle"' <<<"$idle_voice" >/dev/null
+        cp ${pkgs.bash}/bin/bash "$TMPDIR/fake-bin/pw-record"
+        ${pkgs.coreutils}/bin/mkfifo "$TMPDIR/voice-blocker"
+        "$TMPDIR/fake-bin/pw-record" -c \
+          'read -r _ <"$1"' pw-record "$TMPDIR/voice-blocker" &
+        voice_pid=$!
+        for _ in $(${pkgs.coreutils}/bin/seq 1 20); do
+          active_voice="$($runtime/bin/omarchy-keystone-voice)"
+          jq -e '.class == "recording"' <<<"$active_voice" >/dev/null && break
+          ${pkgs.coreutils}/bin/sleep 0.05
+        done
+        jq -e '.tooltip == "Voice memo recording" and .class == "recording"' \
+          <<<"$active_voice" >/dev/null
+        kill "$voice_pid"
+        wait "$voice_pid" 2>/dev/null || true
+        voice_pid=
+
+        update_output="$TMPDIR/update-output"
+        if env -u KEYSTONE_CONFIG_CHECKOUT \
+          "$runtime/bin/omarchy-update-available" >"$update_output"; then
+          echo "FAIL: update indicator activated without a configured checkout" >&2
+          exit 1
+        fi
+        test ! -s "$update_output"
+
+        bare="$TMPDIR/remote.git"
+        checkout="$TMPDIR/ks-config"
+        git init --bare "$bare"
+        git init -b main "$checkout"
+        git -C "$checkout" config user.name test
+        git -C "$checkout" config user.email test@example.invalid
+        touch "$checkout/first"
+        git -C "$checkout" add first
+        git -C "$checkout" commit -m first
+        git -C "$checkout" remote add origin "$bare"
+        git -C "$checkout" push -u origin main
+        other="$TMPDIR/other"
+        git clone -b main "$bare" "$other"
+        git -C "$other" config user.name test
+        git -C "$other" config user.email test@example.invalid
+        touch "$other/second"
+        git -C "$other" add second
+        git -C "$other" commit -m second
+        git -C "$other" push
+        KEYSTONE_CONFIG_CHECKOUT="$checkout" "$runtime/bin/omarchy-update-available"
+        touch "$out"
+      '';
+
   template-binaries =
     pkgs.runCommand "template-binaries"
       {
+        nativeBuildInputs = [ pkgs.gnugrep ];
         missing = lib.concatStringsSep " " missingBinaries;
+        runtime = omarchyRuntime;
+        runtimeCommands = lib.concatStringsSep " " templateRuntimeCommands;
+        runtimeInstalled = lib.boolToString quattroRuntimeInstalled;
+        coreIni = "${templates}/themes/.local/share/omarchy/default/mako/core.ini";
+        homeProfile = homeStandalone.config.home.path;
+        profileBin = "${homeStandalone.config.home.profileDirectory}/bin";
+        inherit makoServicePath;
       }
       ''
         if [ -n "$missing" ]; then
           echo "FAIL: template-invoked binaries missing from environment.systemPackages: $missing" >&2
           exit 1
         fi
+        if [ "$runtimeInstalled" != true ]; then
+          echo "FAIL: the Quattro runtime is not installed at OS level" >&2
+          exit 1
+        fi
+        for command in $runtimeCommands; do
+          test -x "$runtime/bin/$command" || {
+            echo "FAIL: template command $command is missing from the Quattro runtime" >&2
+            exit 1
+          }
+        done
+        test -x ${evalHyprland.pkgs.mako}/bin/makoctl || {
+          echo "FAIL: the notification template action requires makoctl" >&2
+          exit 1
+        }
+        test -x "$homeProfile/bin/keystone-menu" || {
+          echo "FAIL: the notification template action requires the public Keystone menu command" >&2
+          exit 1
+        }
+        mako_path="''${makoServicePath#PATH=}"
+        IFS=: read -r shell_bin mako_bin service_profile_bin extra_path <<< "$mako_path"
+        test -x "$shell_bin/sh"
+        test -x "$mako_bin/makoctl"
+        test "$service_profile_bin" = "$profileBin"
+        test -z "$extra_path"
+        if grep -Eq 'omarchy-(notification-dismiss|launch-wifi)' "$coreIni"; then
+          echo "FAIL: notification actions still depend on missing legacy commands" >&2
+          exit 1
+        fi
+
+        wifi_action="$(grep -A1 -F '[summary~="Setup Wi-Fi"]' "$coreIni" | tail -n1 | cut -d "'" -f2)"
+        update_action="$(grep -A1 -F '[summary~="Update System"]' "$coreIni" | tail -n1 | cut -d "'" -f2)"
+        test -n "$wifi_action"
+        test -n "$update_action"
+        mkdir -p "$TMPDIR/action-bin"
+        cat > "$TMPDIR/action-bin/action-command" <<'EOF'
+        #!${pkgs.runtimeShell}
+        printf '%s %s\n' "''${0##*/}" "$*" >> "$ACTION_LOG"
+        EOF
+        chmod +x "$TMPDIR/action-bin/action-command"
+        for command in makoctl keystone-menu \
+          omarchy-launch-floating-terminal-with-presentation omarchy-update; do
+          ln -s action-command "$TMPDIR/action-bin/$command"
+        done
+        export ACTION_LOG="$TMPDIR/actions.log"
+        PATH="$TMPDIR/action-bin" ${pkgs.runtimeShell} -c "$wifi_action"
+        PATH="$TMPDIR/action-bin" ${pkgs.runtimeShell} -c "$update_action"
+        printf '%s\n' \
+          'makoctl dismiss --all' \
+          'keystone-menu wifi' \
+          'makoctl dismiss --all' \
+          'omarchy-launch-floating-terminal-with-presentation omarchy-update' \
+          > "$TMPDIR/expected-actions.log"
+        diff -u "$TMPDIR/expected-actions.log" "$ACTION_LOG"
         echo "PASS: all template-invoked binaries are OS-level packages"
         touch "$out"
       '';
@@ -614,6 +1199,19 @@ in
         touch "$out"
       '';
 
+  upower-daemon-contract =
+    pkgs.runCommand "upower-daemon-contract"
+      {
+        enabled = lib.boolToString upowerEnabled;
+      }
+      ''
+        if [ "$enabled" != "true" ]; then
+          echo "FAIL: the battery monitor client requires the UPower D-Bus daemon" >&2
+          exit 1
+        fi
+        touch "$out"
+      '';
+
   hypridle-hook-path =
     pkgs.runCommand "hypridle-hook-path"
       {
@@ -627,6 +1225,25 @@ in
         fi
         if [ -n "$missing" ]; then
           echo "FAIL: rendered hypridle unit PATH is missing hook commands: $missing" >&2
+          exit 1
+        fi
+        touch "$out"
+      '';
+
+  dpms-dispatch-contract =
+    pkgs.runCommand "dpms-dispatch-contract"
+      {
+        nativeBuildInputs = [ pkgs.gnugrep ];
+        inherit dpmsWakeText;
+        passAsFile = [ "dpmsWakeText" ];
+      }
+      ''
+        if ! grep -Fq 'hyprctl dispatch "hl.dsp.dpms({ action = \"$1\" })"' "$dpmsWakeTextPath"; then
+          echo "FAIL: keystone-dpms-wake does not use Hyprland's typed DPMS dispatcher" >&2
+          exit 1
+        fi
+        if grep -Eq '^[[:space:]]*hyprctl dispatch[[:space:]]+dpms([[:space:]]|$)' "$dpmsWakeTextPath"; then
+          echo "FAIL: keystone-dpms-wake uses the legacy bare DPMS dispatcher" >&2
           exit 1
         fi
         touch "$out"
@@ -700,8 +1317,21 @@ in
         );
         gcrSocket = "${evalHyprland.config.services.gnome.gcr-ssh-agent.package}/share/systemd/user/gcr-ssh-agent.socket";
         uwsmEnv = "${templates}/hyprland/.config/uwsm/env";
-        lockText = evalHyprland.pkgs.keystone-desktop.keystone-lock.text;
-        expectedExport = "export KEYSTONE_LOCK_STARTUP_CONFIG=${evalHyprland.pkgs.keystone-desktop.keystone-lock.startupConfig}";
+        normalLockExecStart =
+          homeStandalone.config.systemd.user.services.keystone-hyprlock.Service.ExecStart;
+        startupLockExecStart =
+          homeStandalone.config.systemd.user.services.keystone-hyprlock-startup.Service.ExecStart;
+        expectedNormalLockExecStart = evalHyprland.pkgs.keystone-desktop.keystone-lock.normalCommand;
+        expectedStartupLockExecStart = evalHyprland.pkgs.keystone-desktop.keystone-lock.startupCommand;
+        normalLockRestart = homeStandalone.config.systemd.user.services.keystone-hyprlock.Service.Restart;
+        startupLockRestart =
+          homeStandalone.config.systemd.user.services.keystone-hyprlock-startup.Service.Restart;
+        normalLockRestartSec = toString homeStandalone.config.systemd.user.services.keystone-hyprlock.Service.RestartSec;
+        startupLockRestartSec = toString homeStandalone.config.systemd.user.services.keystone-hyprlock-startup.Service.RestartSec;
+        normalLockPartOf = lib.concatStringsSep " " homeStandalone.config.systemd.user.services.keystone-hyprlock.Unit.PartOf;
+        startupLockPartOf = lib.concatStringsSep " " homeStandalone.config.systemd.user.services.keystone-hyprlock-startup.Unit.PartOf;
+        normalLockConflicts = lib.concatStringsSep " " homeStandalone.config.systemd.user.services.keystone-hyprlock.Unit.Conflicts;
+        startupLockConflicts = lib.concatStringsSep " " homeStandalone.config.systemd.user.services.keystone-hyprlock-startup.Unit.Conflicts;
         greetdPam = greetdPamText;
         loginPam = loginPamText;
         hyprlockPam = hyprlockPamText;
@@ -709,7 +1339,6 @@ in
         passwdPam = passwdPamText;
         startupConfig = evalHyprland.pkgs.keystone-desktop.keystone-lock.startupConfig;
         passAsFile = [
-          "lockText"
           "greetdPam"
           "loginPam"
           "hyprlockPam"
@@ -749,13 +1378,30 @@ in
         require "the UWSM template does not export the canonical GCR socket" \
           '^export SSH_AUTH_SOCK="\$XDG_RUNTIME_DIR/gcr/ssh"$' "$uwsmEnv"
 
-        # The packaged binary MUST own the startup config: an ambient
-        # KEYSTONE_LOCK_STARTUP_CONFIG may never select the boot lock's
-        # password-only Hyprlock config.
-        if ! grep -Fqx "$expectedExport" "$lockTextPath"; then
-          echo "FAIL: keystone-lock does not unconditionally export its Nix-owned startup config" >&2
-          exit 1
-        fi
+        expect "normal Hyprlock service does not use the packaged command" \
+          "$normalLockExecStart" "$expectedNormalLockExecStart"
+        expect "startup Hyprlock service does not use the Nix-owned startup config" \
+          "$startupLockExecStart" "$expectedStartupLockExecStart"
+        expect "normal Hyprlock is not restarted after crashes" "$normalLockRestart" on-failure
+        expect "startup Hyprlock is not restarted after crashes" "$startupLockRestart" on-failure
+        expect "normal Hyprlock restart delay changed" "$normalLockRestartSec" 1
+        expect "startup Hyprlock restart delay changed" "$startupLockRestartSec" 1
+        expect "normal Hyprlock is not bound to the Wayland session" \
+          "$normalLockPartOf" wayland-session@Hyprland.target
+        expect "startup Hyprlock is not bound to the Wayland session" \
+          "$startupLockPartOf" wayland-session@Hyprland.target
+        for conflict in keystone-hyprlock-startup.service wayland-session-shutdown.target; do
+          case " $normalLockConflicts " in
+            *" $conflict "*) ;;
+            *) echo "FAIL: normal Hyprlock lacks $conflict" >&2; exit 1 ;;
+          esac
+        done
+        for conflict in keystone-hyprlock.service wayland-session-shutdown.target; do
+          case " $startupLockConflicts " in
+            *" $conflict "*) ;;
+            *) echo "FAIL: startup Hyprlock lacks $conflict" >&2; exit 1 ;;
+          esac
+        done
 
         require "greetd does not enter the login PAM session" \
           '^session[[:space:]]+include[[:space:]]+login' "$greetdPamPath"
@@ -763,6 +1409,8 @@ in
           '^session[[:space:]]+optional.*pam_gnome_keyring\.so.*auto_start' "$loginPamPath"
         require "normal Hyprlock lacks GNOME Keyring authentication" \
           '^auth[[:space:]]+optional.*pam_gnome_keyring\.so' "$hyprlockPamPath"
+        require "normal Hyprlock lacks fingerprint authentication" \
+          '^auth[[:space:]]+sufficient.*pam_fprintd\.so' "$hyprlockPamPath"
         require "startup Hyprlock lacks GNOME Keyring authentication" \
           '^auth[[:space:]]+optional.*pam_gnome_keyring\.so' "$startupPamPath"
         require "startup Hyprlock lacks password authentication" \
@@ -802,6 +1450,7 @@ in
         missing = lib.concatStringsSep " " missingStandaloneCommands;
         unexpected = lib.concatStringsSep " " unexpectedStandaloneCommands;
         leaked = lib.concatStringsSep " " leakedKsCommands;
+        homePath = homeStandalone.config.home.path;
       }
       ''
         echo "home.packages (vanilla nixpkgs, no keystone overlay):"
@@ -809,6 +1458,7 @@ in
         echo "systemd user services:"
         echo "$unitNames"
         echo "keystone commands installed: $actual"
+        test -d "$homePath"
 
         errors=0
 
@@ -839,7 +1489,7 @@ in
 
   # Successor of keystone's hyprland-config-smoke collision guard: with the
   # FULL HM option surface enabled, nix must own zero files under the stowed
-  # dotfile directories (.config/{hypr,waybar,wofi,walker}) — those paths
+  # dotfile directories (.config/{hypr,wofi,walker}) — those paths
   # belong exclusively to the user's stowed dotfiles, and any home.file /
   # xdg.configFile entry there collides with stow at activation time.
   home-stow-collision =

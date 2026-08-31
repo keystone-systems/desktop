@@ -30,9 +30,9 @@ writeShellApplication {
       logger -t keystone-dpms-wake -- "$*" || true
     }
 
-    # hyprctl dispatch takes Lua since Hyprland 0.56. These calls are `||
-    # log`-guarded so the watchdog never fails the hypridle hook, which means
-    # malformed Lua only ever shows up in the journal.
+    # Hyprland 0.56 treats `hyprctl dispatch` as Lua shorthand: the argument
+    # must be a typed hl.dsp.* expression, not the legacy dispatcher name and
+    # argument pair.
     dpms() {
       hyprctl dispatch "hl.dsp.dpms({ action = \"$1\" })" >/dev/null 2>&1 ||
         log "dpms $1 dispatch failed"
