@@ -14,7 +14,7 @@ in
   config = lib.mkIf (cfg.enable && cfg.environment == "hyprland") {
     # The runtime's public commands belong in the interactive profile. Its
     # large tool closure belongs only to the service PATH below.
-    home.packages = [ runtime ];
+    home.packages = [ quattro.publicRuntime ];
     home.sessionVariables.OMARCHY_PATH = runtime;
     systemd.user.services.omarchy-shell = {
       Unit = {
@@ -32,7 +32,7 @@ in
               "${runtime}/bin"
               "${config.home.profileDirectory}/bin"
               "/run/current-system/sw/bin"
-              (lib.makeBinPath quattro.runtimePackages)
+              (lib.makeBinPath quattro.servicePackages)
             ]
           }"
         ]

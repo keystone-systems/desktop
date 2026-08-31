@@ -2,7 +2,7 @@
 let
   system = pkgs.stdenv.hostPlatform.system;
   quickshell = desktopInputs.quickshell.packages.${system}.quickshell;
-  upstreamScripts = [
+  publicUpstreamScripts = [
     "omarchy-launch-shell"
     "omarchy-shell"
     "omarchy-shell-config"
@@ -25,6 +25,33 @@ let
     "omarchy-toggle"
     "omarchy-toggle-bar"
   ];
+  # These commands implement enabled Quattro widgets. They belong to the
+  # shell service closure, but are not Keystone's public interactive command
+  # surface. Keep them out of the profile package below.
+  widgetUpstreamScripts = [
+    "omarchy-agent"
+    "omarchy-agent-usage-update"
+    "omarchy-agent-usage-claude"
+    "omarchy-agent-usage-codex"
+    "omarchy-agent-usage-fireworks"
+    "omarchy-default-agent"
+    "omarchy-cmd-missing"
+    "omarchy-cmd-present"
+    "omarchy-launch-tui"
+    "omarchy-monitor-state"
+    "omarchy-brightness-display"
+    "omarchy-brightness-display-apple"
+    "omarchy-brightness-display-ddc"
+    "omarchy-hw-display"
+    "omarchy-hyprland-monitor-focused"
+    "omarchy-hyprland-monitor-focused-apple"
+    "omarchy-hyprland-monitor-scaling"
+    "omarchy-display-text-size"
+    "omarchy-notification-send"
+    "omarchy-network-status"
+    "omarchy-network-band"
+  ];
+  upstreamScripts = publicUpstreamScripts ++ widgetUpstreamScripts;
   delegate = name: runtimeInputs: text: {
     inherit name;
     package = pkgs.writeShellApplication { inherit name runtimeInputs text; };
@@ -143,12 +170,23 @@ let
         || printf '{"text":"","tooltip":"Screen recording idle"}\n'
     '')
   ];
-  runtimeCommandNames = upstreamScripts ++ map (entry: entry.name) delegates;
+  publicRuntimeCommandNames = publicUpstreamScripts ++ map (entry: entry.name) delegates;
+  widgetRuntimeCommandNames = widgetUpstreamScripts;
+  runtimeCommandNames = publicRuntimeCommandNames ++ widgetRuntimeCommandNames;
   runtimeTree =
-    pkgs.runCommand "keystone-omarchy-quattro-runtime"
+    pkgs.runCommand "keystone-omarchy-quattro-runtime-private"
       {
-        nativeBuildInputs = [ pkgs.makeWrapper ];
-        passthru = { inherit runtimeCommandNames; };
+        nativeBuildInputs = [
+          pkgs.makeWrapper
+          pkgs.python3
+        ];
+        passthru = {
+          inherit
+            publicRuntimeCommandNames
+            runtimeCommandNames
+            widgetRuntimeCommandNames
+            ;
+        };
       }
       ''
         mkdir -p "$out"
@@ -170,6 +208,26 @@ let
             ln -s "$command" "$out/bin/$(basename "$command")"
           done
         '') delegates}
+      '';
+  # Expose only the compatibility commands that templates and users invoke.
+  # The full tree remains reachable through OMARCHY_PATH and the service PATH.
+  publicRuntime =
+    pkgs.runCommand "keystone-omarchy-quattro-runtime"
+      {
+        passthru = {
+          inherit
+            publicRuntimeCommandNames
+            runtimeCommandNames
+            runtimeTree
+            widgetRuntimeCommandNames
+            ;
+        };
+      }
+      ''
+        mkdir -p "$out/bin"
+        ${pkgs.lib.concatMapStringsSep "\n" (name: ''
+          ln -s ${runtimeTree}/bin/${name} "$out/bin/${name}"
+        '') publicRuntimeCommandNames}
       '';
   runtimePackages = with pkgs; [
     quickshell
@@ -210,12 +268,25 @@ let
     imagemagick
     xdg-utils
   ];
+  widgetRuntimePackages = with pkgs; [
+    glib
+    inotify-tools
+    libxkbcommon
+    uwsm
+    xdg-terminal-exec
+  ];
+  servicePackages = runtimePackages ++ widgetRuntimePackages;
 in
 {
   inherit
+    publicRuntime
+    publicRuntimeCommandNames
     quickshell
     runtimeCommandNames
     runtimePackages
     runtimeTree
+    servicePackages
+    widgetRuntimeCommandNames
+    widgetRuntimePackages
     ;
 }

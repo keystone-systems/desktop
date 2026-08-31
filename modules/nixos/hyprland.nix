@@ -181,7 +181,7 @@ in
     # (enforced by the template-binaries check).
     environment.systemPackages =
       quattro.runtimePackages
-      ++ [ quattro.runtimeTree ]
+      ++ [ quattro.publicRuntime ]
       ++ (with pkgs; [
         hyprlock
         hypridle

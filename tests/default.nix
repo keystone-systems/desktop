@@ -261,6 +261,10 @@ let
   omarchyRuntimePackage = lib.findFirst (
     package: lib.getName package == "keystone-omarchy-quattro-runtime"
   ) (throw "Quattro runtime package is missing") evalHyprland.config.environment.systemPackages;
+  omarchyPrivateRuntimePackage = omarchyRuntimePackage.runtimeTree;
+  keystoneMenuPackage = lib.findFirst (
+    package: lib.getName package == "keystone-menu"
+  ) (throw "keystone-menu package is missing") homeStandalone.config.home.packages;
   templateRuntimeCommands = [
     "omarchy-toggle-bar"
     "omarchy-launch-floating-terminal-with-presentation"
@@ -831,16 +835,47 @@ in
         ];
         shellExecStartCount = toString (lib.length omarchyShellUnit.Service.ExecStart);
         inherit omarchyShellPath;
+        enabledWidgetCommands = lib.concatStringsSep "\n" [
+          "bash"
+          "find"
+          "inotifywait"
+          "keystone-menu"
+          "omarchy-agent"
+          "omarchy-agent-usage-update"
+          "omarchy-brightness-display"
+          "omarchy-display-text-size"
+          "omarchy-dns"
+          "omarchy-hyprland-monitor-scaling"
+          "omarchy-keystone-health"
+          "omarchy-keystone-recording"
+          "omarchy-keystone-voice"
+          "omarchy-launch-floating-terminal-with-presentation"
+          "omarchy-monitor-state"
+          "omarchy-network-band"
+          "omarchy-network-status"
+          "omarchy-update"
+          "omarchy-update-available"
+          "wl-copy"
+          "xkbcli"
+        ];
         expectedRuntimeCommands = lib.concatStringsSep "\n" omarchyRuntimePackage.runtimeCommandNames;
-        passAsFile = [ "expectedRuntimeCommands" ];
+        expectedWidgetRuntimeCommands = lib.concatStringsSep "\n" omarchyRuntimePackage.widgetRuntimeCommandNames;
+        passAsFile = [
+          "enabledWidgetCommands"
+          "expectedRuntimeCommands"
+          "expectedWidgetRuntimeCommands"
+        ];
         themeHook = themePostSwitchHook;
         homeProfileBin = "${homeStandalone.config.home.profileDirectory}/bin";
+        keystoneMenuBin = "${keystoneMenuPackage}/bin";
         standaloneShellEnvironment = lib.concatStringsSep "\n" omarchyShellUnit.Service.Environment;
         configuredShellEnvironment = lib.concatStringsSep "\n" configuredOmarchyShellEnvironment;
       }
       ''
         runtime=${omarchyRuntime}
+        public_runtime=${omarchyRuntimePackage}
         shell_config=${templates}/omarchy/.config/omarchy/shell.json
+        test "$runtime" = "${omarchyPrivateRuntimePackage}"
         test -x "$runtime/bin/omarchy-launch-shell"
         test -x "$runtime/bin/omarchy-shell"
         test -x "$runtime/bin/omarchy-theme-set-templates"
@@ -862,7 +897,73 @@ in
           > "$TMPDIR/actual-runtime-commands"
         sort "$expectedRuntimeCommandsPath" > "$TMPDIR/expected-runtime-commands"
         diff -u "$TMPDIR/expected-runtime-commands" "$TMPDIR/actual-runtime-commands"
-        if grep -R -nE '(^|[^[:alnum:]_])(pacman|yay)([^[:alnum:]_]|$)|/(usr|etc)/' "$runtime/bin"; then
+
+        # The enabled layout is the source of the custom command-widget
+        # contract. Derive both exec and click commands instead of maintaining
+        # a second copy that could silently drift from shell.json.
+        jq -r '
+          [.bar.layout[][]
+            | select(.type == "command")
+            | .exec, .onClick
+            | select(. != null)
+            | split(" ")[0]]
+          | unique[]
+        ' "$shell_config" > "$TMPDIR/configured-command-widget-commands"
+        printf '%s\n' \
+          keystone-menu \
+          omarchy-keystone-health \
+          omarchy-keystone-recording \
+          omarchy-keystone-voice \
+          | sort -u > "$TMPDIR/expected-command-widget-commands"
+        diff -u "$TMPDIR/expected-command-widget-commands" \
+          "$TMPDIR/configured-command-widget-commands"
+
+        jq -e '
+          [.bar.layout[][] | .id]
+          | contains(["omarchy.agents", "omarchy.monitor", "omarchy.network"])
+        ' "$shell_config" >/dev/null
+
+        # Pin every literal command edge in the three enabled upstream widget
+        # implementations plus the registry watcher. If upstream changes a
+        # command, the focused contract must be updated deliberately.
+        widget_sources="$runtime/shell/plugins/agents $runtime/shell/plugins/panels/monitor $runtime/shell/plugins/panels/network $runtime/shell/services/PluginRegistry.qml $runtime/shell/plugins/bar/widgets/KeyboardLayout.qml"
+        for command in \
+          omarchy-agent omarchy-agent-usage-update \
+          omarchy-brightness-display omarchy-display-text-size \
+          omarchy-hyprland-monitor-scaling omarchy-monitor-state \
+          omarchy-dns omarchy-launch-floating-terminal-with-presentation \
+          omarchy-network-band omarchy-network-status wl-copy \
+          inotifywait xkbcli; do
+          grep -R -Fq "$command" $widget_sources || {
+            echo "FAIL: enabled widget contract no longer references $command" >&2
+            exit 1
+          }
+        done
+
+        service_path="''${omarchyShellPath#PATH=}"
+        service_path="$service_path:$keystoneMenuBin"
+        while IFS= read -r command; do
+          PATH="$service_path" command -v "$command" >/dev/null || {
+            echo "FAIL: enabled widget command $command is absent from the Quattro service PATH" >&2
+            exit 1
+          }
+        done < "$enabledWidgetCommandsPath"
+
+        # Transitive upstream helpers share the private runtime with QML, but
+        # MUST NOT leak into the system or Home Manager profile package.
+        while IFS= read -r command; do
+          test -x "$runtime/bin/$command" || {
+            echo "FAIL: widget helper $command is absent from the private runtime" >&2
+            exit 1
+          }
+          test ! -e "$public_runtime/bin/$command" || {
+            echo "FAIL: private widget helper $command leaked into the public profile" >&2
+            exit 1
+          }
+        done < "$expectedWidgetRuntimeCommandsPath"
+        grep -Fq 'omarchy-cmd-present' "$runtime/bin/omarchy-network-status"
+        if grep -R -nE '(^|[^[:alnum:]_])(pacman|yay)([^[:alnum:]_]|$)|/(usr|etc)/' "$runtime/bin" \
+          | grep -vF 'Path("/etc/localtime")'; then
           echo "FAIL: curated runtime retains an Arch or privileged-filesystem assumption" >&2
           exit 1
         fi
@@ -1110,7 +1211,7 @@ in
       {
         nativeBuildInputs = [ pkgs.gnugrep ];
         missing = lib.concatStringsSep " " missingBinaries;
-        runtime = omarchyRuntime;
+        runtime = omarchyRuntimePackage;
         runtimeCommands = lib.concatStringsSep " " templateRuntimeCommands;
         runtimeInstalled = lib.boolToString quattroRuntimeInstalled;
         coreIni = "${templates}/themes/.local/share/omarchy/default/mako/core.ini";
