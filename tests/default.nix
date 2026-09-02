@@ -80,9 +80,6 @@ let
   # Guards the extraction risk of silently losing a binary that was HM-only
   # before (e.g. hyprpicker).
   templateBinaries = [
-    # The pinned flake names its package quickshell-wrapped while providing
-    # the bare `quickshell` command used by the Quattro launcher.
-    "quickshell-wrapped"
     "wofi"
     "mako"
     "hyprlock"
@@ -472,6 +469,46 @@ let
   passwdPamText = evalHyprland.config.security.pam.services.passwd.text;
   logindSettings = evalHyprland.config.services.logind.settings.Login;
   upowerEnabled = evalHyprland.config.services.upower.enable;
+  powerProfilesEnabled = evalHyprland.config.services.power-profiles-daemon.enable;
+  colordEnabled = evalHyprland.config.services.colord.enable;
+  dbusOwnerStates = {
+    NetworkManager = evalHyprland.config.networking.networkmanager.enable;
+    BlueZ = evalHyprland.config.hardware.bluetooth.enable;
+    fprintd = evalHyprland.config.services.fprintd.enable;
+    UPower = evalHyprland.config.services.upower.enable;
+    power-profiles = powerProfilesEnabled;
+    PipeWire = evalHyprland.config.services.pipewire.enable;
+    portals = evalHyprland.config.xdg.portal.enable;
+  };
+  missingDbusOwners = lib.attrNames (lib.filterAttrs (_: enabled: !enabled) dbusOwnerStates);
+  providerPackageNames = [
+    "networkmanager"
+    "bluez"
+    "fprintd"
+    "upower"
+    "power-profiles-daemon"
+    "pipewire"
+    "xdg-desktop-portal"
+    "xdg-desktop-portal-gtk"
+    "xdg-desktop-portal-hyprland"
+  ];
+  privateRuntimeMarkerNames = [
+    "curl"
+    "ddcutil"
+    "imagemagick"
+    "ripgrep"
+  ];
+  providerPackagePaths = lib.genAttrs providerPackageNames (
+    name:
+    lib.unique (
+      map toString (
+        lib.filter (package: lib.getName package == name) evalHyprland.config.environment.systemPackages
+      )
+    )
+  );
+  ambiguousGlobalProviderPackages = lib.attrNames (
+    lib.filterAttrs (_: paths: lib.length paths > 1) providerPackagePaths
+  );
 in
 {
   # No personal literal may survive the template scrub: absolute home paths,
@@ -863,10 +900,12 @@ in
           "xkbcli"
         ];
         expectedRuntimeCommands = lib.concatStringsSep "\n" omarchyRuntimePackage.runtimeCommandNames;
+        expectedPublicRuntimeCommands = lib.concatStringsSep "\n" omarchyRuntimePackage.publicRuntimeCommandNames;
         expectedWidgetRuntimeCommands = lib.concatStringsSep "\n" omarchyRuntimePackage.widgetRuntimeCommandNames;
         passAsFile = [
           "enabledWidgetCommands"
           "expectedRuntimeCommands"
+          "expectedPublicRuntimeCommands"
           "expectedWidgetRuntimeCommands"
         ];
         themeHook = themePostSwitchHook;
@@ -896,6 +935,13 @@ in
         esac
         test ! -e "$runtime/bin/pacman"
         test ! -e "$runtime/bin/yay"
+        test ! -e "$public_runtime/share"
+        while IFS= read -r command; do
+          grep -Fq 'PATH=' "$public_runtime/bin/$command" || {
+            echo "FAIL: public Quattro command $command has no closed PATH" >&2
+            exit 1
+          }
+        done < "$expectedPublicRuntimeCommandsPath"
         find "$runtime/bin" -mindepth 1 -maxdepth 1 \
           \( -type f -o -type l \) -printf '%f\n' | sort \
           > "$TMPDIR/actual-runtime-commands"
@@ -1550,6 +1596,36 @@ in
       ''
         if [ "$enabled" != "true" ]; then
           echo "FAIL: the battery monitor client requires the UPower D-Bus daemon" >&2
+          exit 1
+        fi
+        touch "$out"
+      '';
+
+  desktop-dbus-ownership =
+    pkgs.runCommand "desktop-dbus-ownership"
+      {
+        missingOwners = lib.concatStringsSep " " missingDbusOwners;
+        ambiguousProviders = lib.concatStringsSep " " ambiguousGlobalProviderPackages;
+        fullRuntimePublished = lib.boolToString (
+          lib.all (name: lib.elem name systemPackageNames) privateRuntimeMarkerNames
+        );
+        colord = lib.boolToString colordEnabled;
+      }
+      ''
+        if [ -n "$missingOwners" ]; then
+          echo "FAIL: desktop D-Bus services lack their NixOS owner: $missingOwners" >&2
+          exit 1
+        fi
+        if [ -n "$ambiguousProviders" ]; then
+          echo "FAIL: multiple distinct D-Bus provider paths are globally published: $ambiguousProviders" >&2
+          exit 1
+        fi
+        if [ "$fullRuntimePublished" = true ]; then
+          echo "FAIL: the Quattro service package closure is globally published" >&2
+          exit 1
+        fi
+        if [ "$colord" != true ]; then
+          echo "FAIL: CUPS has no color-profile service" >&2
           exit 1
         fi
         touch "$out"

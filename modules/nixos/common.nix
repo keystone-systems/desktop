@@ -8,6 +8,15 @@
 with lib;
 let
   cfg = config.keystone.desktop;
+  # Expose only interactive fingerprint clients. Installing pkgs.fprintd
+  # wholesale here would also project its D-Bus activation metadata into the
+  # global system profile while services.fprintd already owns the daemon.
+  fprintdCli = pkgs.runCommand "keystone-fprintd-cli" { } ''
+    mkdir -p "$out/bin"
+    for command in fprintd-delete fprintd-enroll fprintd-list fprintd-verify; do
+      ln -s ${pkgs.fprintd}/bin/$command "$out/bin/$command"
+    done
+  '';
 in
 {
   config = mkIf cfg.enable {
@@ -66,6 +75,12 @@ in
     # find the D-Bus service. PAM integration (fprintAuth) is intentionally
     # deferred; enable the daemon first so enrollment via the Walker menu works.
     services.fprintd.enable = mkDefault true;
+
+    # One NixOS service module owns each D-Bus provider. Quattro consumes the
+    # client binaries through its private service PATH and does not publish
+    # daemon metadata through environment.systemPackages.
+    services.power-profiles-daemon.enable = mkDefault true;
+    services.colord.enable = mkDefault true;
 
     # Desktop applications use the Secret Service API for local credentials
     # such as Chromium's Safe Storage key. The daemon starts with the desktop
@@ -132,7 +147,7 @@ in
 
         # Fingerprint CLI tools — enrollment terminal inherits user PATH, not
         # the wrapper's runtimeInputs, so the binaries must be globally present.
-        fprintd
+        fprintdCli
 
         # System utilities
         pavucontrol

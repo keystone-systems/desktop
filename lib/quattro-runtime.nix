@@ -222,6 +222,7 @@ let
   publicRuntime =
     pkgs.runCommand "keystone-omarchy-quattro-runtime"
       {
+        nativeBuildInputs = [ pkgs.makeWrapper ];
         passthru = {
           inherit
             publicRuntimeCommandNames
@@ -234,7 +235,8 @@ let
       ''
         mkdir -p "$out/bin"
         ${pkgs.lib.concatMapStringsSep "\n" (name: ''
-          ln -s ${runtimeTree}/bin/${name} "$out/bin/${name}"
+          makeWrapper ${runtimeTree}/bin/${name} "$out/bin/${name}" \
+            --prefix PATH : ${pkgs.lib.makeBinPath servicePackages}
         '') publicRuntimeCommandNames}
       '';
   runtimePackages = with pkgs; [

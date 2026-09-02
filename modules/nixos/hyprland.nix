@@ -179,35 +179,35 @@ in
     # user's stowed dotfiles (seeded from templates/), which invoke these by
     # bare name — every binary a template references must be present here
     # (enforced by the template-binaries check).
-    environment.systemPackages =
-      quattro.runtimePackages
-      ++ [ quattro.publicRuntime ]
-      ++ (with pkgs; [
-        hyprlock
-        hypridle
-        hyprsunset
-        hyprpicker
-        # Match the HM hyprpaper unit's ExecStart package so the daemon and any
-        # hyprpaper CLI invocations agree on IPC.
-        desktopInputs.hyprpaper.packages.${stdenv.hostPlatform.system}.hyprpaper
-        keystone-desktop.hyprpolkitagent
-        keystone-desktop.keystone-dpms-wake
-        keystone-desktop.keystone-lock
-        keystone-desktop.keystone-suspend
-        wofi
-        mako
-        swayosd
-        libnotify
-        wl-clipboard
-        wl-clip-persist
-        clipse
-        grim
-        slurp
-        satty
-        wayfreeze
-        brightnessctl
-        playerctl
-      ]);
+    environment.systemPackages = [
+      quattro.publicRuntime
+    ]
+    ++ (with pkgs; [
+      hyprlock
+      hypridle
+      hyprsunset
+      hyprpicker
+      # Match the HM hyprpaper unit's ExecStart package so the daemon and any
+      # hyprpaper CLI invocations agree on IPC.
+      desktopInputs.hyprpaper.packages.${stdenv.hostPlatform.system}.hyprpaper
+      keystone-desktop.hyprpolkitagent
+      keystone-desktop.keystone-dpms-wake
+      keystone-desktop.keystone-lock
+      keystone-desktop.keystone-suspend
+      wofi
+      mako
+      swayosd
+      libnotify
+      wl-clipboard
+      wl-clip-persist
+      clipse
+      grim
+      slurp
+      satty
+      wayfreeze
+      brightnessctl
+      playerctl
+    ]);
     # xdg-desktop-portal-hyprland stays wired via programs.hyprland.portalPackage.
   };
 }

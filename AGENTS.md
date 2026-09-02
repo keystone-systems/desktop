@@ -46,13 +46,23 @@ keystone.desktop = {
 **Included at NixOS level**: Hyprland + UWSM, greetd session launch (agreety
 default session + `initial_session` auto-login into a locked session), startup
 `hyprlock` authentication (`programs.hyprlock.enable` provides
-`/etc/pam.d/hyprlock`), PipeWire audio, Bluetooth, CUPS printing,
-NetworkManager, flatpak, Nerd Fonts (JetBrains Mono, Caskaydia Mono), polkit,
-OOM protection (Docker/Podman get `OOMScoreAdjust = 1000`), OBS Studio with
-PipeWire audio capture, and **every binary the templates invoke by bare name**
-(quickshell, wofi, mako, hypr* tools, grim/slurp/satty, clipse, brightnessctl,
+`/etc/pam.d/hyprlock`), PipeWire audio, Bluetooth, CUPS printing with colord,
+NetworkManager, power profiles, flatpak, Nerd Fonts (JetBrains Mono, Caskaydia
+Mono), polkit, OOM protection (Docker/Podman get `OOMScoreAdjust = 1000`), OBS
+Studio with PipeWire audio capture, and **every binary the templates invoke by
+bare name** (wofi, mako, hypr* tools, grim/slurp/satty, clipse, brightnessctl,
 playerctl, keystone-dpms-wake, …). The `template-binaries` check enforces that
 union — stowed configs run outside any HM wrapper PATH.
+
+**Quattro runtime invariant**: `environment.systemPackages` exposes only the
+public, bin-only compatibility wrappers. Quickshell and the complete client
+tool closure belong to the private `omarchy-shell` service PATH; do not append
+`quattro.runtimePackages` to the global profile. NetworkManager, BlueZ,
+fprintd, UPower, power-profiles-daemon, PipeWire, and XDG portals each have one
+NixOS service owner. A service module MAY contribute its provider package to
+the system profile once. Additional interactive tools MUST use bin-only
+projections when the full package also carries D-Bus activation metadata, as
+the fingerprint clients do.
 
 **Security invariant**: when `keystone.desktop.enable = true`, the session MUST
 fail closed if startup `hyprlock` cannot start. Missing theme or wallpaper state
