@@ -13,15 +13,9 @@ let
   # One name per Elephant menu provider. Every path is a mechanical function of
   # the name, so this list is the only place a menu is registered.
   menuNames = [
-    "keystone-main"
-    "keystone-learn"
-    "keystone-capture"
     "keystone-screenshot"
-    "keystone-toggle"
-    "keystone-style"
     "keystone-theme"
     "keystone-background"
-    "keystone-system"
     "keystone-install"
     "keystone-update"
     "keystone-photos"

@@ -110,19 +110,19 @@ in
       };
     };
 
-    # Top-level Walker main-menu surfaces. Each gates one hard-coded entry in
-    # keystone-main-menu's main_json via KEYSTONE_MENU_SHOW_* env vars. Default
-    # off; ks.systems/os glue may raise them to keystone.experimental.
+    # Optional Quattro QML catalog surfaces. The shell service receives static
+    # KEYSTONE_MENU_SHOW_* capability flags; guarded rows never point at a
+    # command omitted from the Home Manager profile.
     photos.enable = mkOption {
       type = types.bool;
       default = false;
-      description = "Show the Photos entry in the Mod+Escape Walker main menu.";
+      description = "Show the Photos entry in the Quattro Trigger menu.";
     };
 
     agents.enable = mkOption {
       type = types.bool;
       default = false;
-      description = "Show the Agents entry in the Mod+Escape Walker main menu.";
+      description = "Show the Agents entry in the Quattro Trigger menu.";
     };
 
     # NOTE: no startupLockCommand option. The required systemd user unit owns

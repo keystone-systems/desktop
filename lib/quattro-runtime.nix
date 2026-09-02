@@ -178,6 +178,7 @@ let
       {
         nativeBuildInputs = [
           pkgs.makeWrapper
+          pkgs.patch
           pkgs.python3
         ];
         passthru = {
@@ -193,6 +194,7 @@ let
         mkdir -p "$out"
         cp -r ${desktopInputs.omarchy}/. "$out/"
         chmod -R u+w "$out"
+        patch -d "$out" -p1 < ${../modules/home/patches/quattro-nixos-menu.patch}
         substituteInPlace "$out/shell/plugins/bar/Bar.qml" \
           --replace-fail \
             'outputText = data.text || String(raw || "").trim()' \

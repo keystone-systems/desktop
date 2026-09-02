@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# keystone-package-menu — Package search/install flow for the Mod+Escape menu.
+# keystone-package-menu — Package search/install flow for the Quattro menu.
 
 set -euo pipefail
 

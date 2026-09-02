@@ -80,6 +80,12 @@ supported Quattro plugins; the shell service does not create that user
 configuration. See the [Quattro compatibility boundary](docs/quattro-compatibility.md)
 for the packaged runtime and command contracts.
 
+Quattro's QML menu is the primary launcher: `Super+Space` opens its root,
+`Super+Alt+Space` opens its native application provider, and `Super+Escape`
+or the power key opens its System route. The bar button drives the same QML
+state. Walker remains installed for subordinate workflows that require
+Elephant providers, previews, dmenu input, or secure text entry.
+
 `seed-dotfiles` skips files that already exist; pass `--force` to overwrite.
 After seeding, the files are yours — edit them freely, commit them to your
 dotfiles repo, and never re-seed unless you want upstream's latest starter

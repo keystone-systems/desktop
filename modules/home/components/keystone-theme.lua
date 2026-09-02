@@ -3,7 +3,6 @@ NamePretty = "Theme"
 Description = "Theme picker"
 Icon = "preferences-desktop-theme"
 HideFromProviderlist = true
-Parent = "keystone-style"
 History = false
 FixedOrder = true
 

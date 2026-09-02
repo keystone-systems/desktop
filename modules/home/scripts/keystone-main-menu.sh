@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# keystone-main-menu — Main Mod+Escape Elephant/Walker menu backend.
+# keystone-main-menu — shared subordinate Elephant/Walker menu backend.
 
 set -euo pipefail
 
@@ -28,178 +28,6 @@ detach() {
   "$(keystone_cmd keystone-detach)" "$@"
 }
 
-current_theme_name() {
-  "$(keystone_cmd keystone-theme-switch)" --current 2>/dev/null || printf 'unknown\n'
-}
-
-blocked_entry_json() {
-  local title="$1"
-  local message="$2"
-
-  jq -n --arg title "$title" --arg message "$message" '
-    [
-      {
-        Text: $title,
-        Subtext: $message,
-        Value: ("blocked\t" + $title + "\t" + $message),
-        Icon: "dialog-warning-symbolic",
-        Preview: ("printf " + (($title + "\n\n" + $message + "\n") | @sh)),
-        PreviewType: "command"
-      }
-    ]
-  '
-}
-
-main_json() {
-  # ISSUE-REQ-1 (#390): Photos/Agents are gated by capability env vars
-  # wired from the desktop home-manager module. Default to hidden when unset so
-  # the surface never leaks in stale builds or ad-hoc invocations.
-  #
-  # SPEC.md "Menu System": Update and Install are the only entries that need the
-  # keystone `ks` CLI (Update -> `ks menu update`, Install -> keystone-package-
-  # menu -> `ks update`). They use the SAME env-var gate, so the rest of this
-  # menu keeps working when keystone.desktop.integration.ksPackage is null.
-  # Never gate this whole script off instead: it is the only Mod+Escape backend.
-  local show_photos="${KEYSTONE_MENU_SHOW_PHOTOS:-false}"
-  local show_agents="${KEYSTONE_MENU_SHOW_AGENTS:-false}"
-  local show_update="${KEYSTONE_MENU_SHOW_UPDATE:-false}"
-  local show_install="${KEYSTONE_MENU_SHOW_INSTALL:-false}"
-
-  jq -n \
-    --arg show_photos "$show_photos" \
-    --arg show_agents "$show_agents" \
-    --arg show_update "$show_update" \
-    --arg show_install "$show_install" '
-    [
-      {
-        Text: "Apps",
-        Subtext: "Application launcher",
-        Value: "open-apps",
-        Icon: "view-app-grid-symbolic"
-      },
-      (if $show_photos == "true" then {
-        Text: "Photos",
-        Subtext: "Search Keystone Photos and preview results",
-        Value: "open-photos-search",
-        Icon: "image-x-generic-symbolic"
-      } else empty end),
-      (if $show_agents == "true" then {
-        Text: "Agents",
-        Subtext: "Agent state, pause, and interactive defaults",
-        Value: "agents",
-        Icon: "computer-symbolic",
-        SubMenu: "keystone-agents"
-      } else empty end),
-      {
-        Text: "Learn",
-        Subtext: "Keybindings and desktop references",
-        Value: "learn",
-        Icon: "help-browser-symbolic",
-        SubMenu: "keystone-learn"
-      },
-      {
-        Text: "Capture",
-        Subtext: "Screenshots and screen recording",
-        Value: "capture",
-        Icon: "camera-photo-symbolic",
-        SubMenu: "keystone-capture"
-      },
-      {
-        Text: "Toggle",
-        Subtext: "Session switches and desktop state",
-        Value: "toggle",
-        Icon: "system-run-symbolic",
-        SubMenu: "keystone-toggle"
-      },
-      {
-        Text: "Style",
-        Subtext: "Theme and visual customization",
-        Value: "style",
-        Icon: "preferences-desktop-theme-symbolic",
-        SubMenu: "keystone-style"
-      },
-      {
-        Text: "Setup",
-        Subtext: "Devices and desktop defaults",
-        Value: "setup",
-        Icon: "preferences-system-symbolic",
-        SubMenu: "keystone-setup"
-      },
-      (if $show_install == "true" then {
-        Text: "Install",
-        Subtext: "Search and install packages from the current system flake",
-        Value: "install",
-        Icon: "list-add-symbolic",
-        SubMenu: "keystone-install"
-      } else empty end),
-      {
-        Text: "Remove",
-        Subtext: "Use Nix instead",
-        Value: "blocked\tRemove\tUse Nix to remove software.",
-        Icon: "list-remove-symbolic"
-      },
-      (if $show_update == "true" then {
-        Text: "Update",
-        Subtext: "Update this host (silent, polkit-approved)",
-        Value: "run-update",
-        Icon: "software-update-available-symbolic"
-      } else empty end),
-      {
-        Text: "System",
-        Subtext: "Lock, suspend, restart, and shutdown",
-        Value: "system",
-        Icon: "system-shutdown-symbolic",
-        SubMenu: "keystone-system"
-      }
-    ]
-  '
-}
-
-learn_json() {
-  jq -n '
-    [
-      {
-        Text: "Keybindings",
-        Subtext: "Search current Hyprland keybindings",
-        Value: "open-keybindings",
-        Icon: "preferences-desktop-keyboard-shortcuts-symbolic"
-      },
-      {
-        Text: "Hyprland",
-        Subtext: "Open the Hyprland wiki",
-        Value: "open-url\thttps://wiki.hypr.land/",
-        Icon: "web-browser-symbolic"
-      },
-      {
-        Text: "NixOS",
-        Subtext: "Open the NixOS wiki",
-        Value: "open-url\thttps://wiki.nixos.org/",
-        Icon: "web-browser-symbolic"
-      }
-    ]
-  '
-}
-
-capture_json() {
-  jq -n '
-    [
-      {
-        Text: "Screenshot",
-        Subtext: "Capture an area or clipboard screenshot",
-        Value: "screenshot",
-        Icon: "applets-screenshooter-symbolic",
-        SubMenu: "keystone-screenshot"
-      },
-      {
-        Text: "Screenrecord",
-        Subtext: "Start or stop screen recording",
-        Value: "screenrecord",
-        Icon: "media-record-symbolic"
-      }
-    ]
-  '
-}
-
 screenshot_json() {
   jq -n '
     [
@@ -214,55 +42,6 @@ screenshot_json() {
         Subtext: "Interactive capture copied directly",
         Value: "screenshot-clipboard",
         Icon: "edit-copy-symbolic"
-      }
-    ]
-  '
-}
-
-toggle_json() {
-  jq -n '
-    [
-      {
-        Text: "Idle inhibitor",
-        Subtext: "Toggle automatic idle lock behavior",
-        Value: "toggle-idle",
-        Icon: "changes-allow-symbolic"
-      },
-      {
-        Text: "Nightlight",
-        Subtext: "Toggle warm screen temperature",
-        Value: "toggle-nightlight",
-        Icon: "weather-clear-night-symbolic"
-      },
-      {
-        Text: "Top bar",
-        Subtext: "Toggle the Quattro bar",
-        Value: "toggle-bar",
-        Icon: "view-more-symbolic"
-      }
-    ]
-  '
-}
-
-style_json() {
-  local current_theme
-  current_theme=$(current_theme_name)
-
-  jq -n --arg current_theme "$current_theme" '
-    [
-      {
-        Text: "Theme",
-        Subtext: ("Current theme: " + $current_theme),
-        Value: "theme",
-        Icon: "preferences-desktop-theme-symbolic",
-        SubMenu: "keystone-theme"
-      },
-      {
-        Text: "Background",
-        Subtext: "Choose a wallpaper for the current theme",
-        Value: "background",
-        Icon: "image-x-generic-symbolic",
-        SubMenu: "keystone-background"
       }
     ]
   '
@@ -314,62 +93,12 @@ theme_json() {
       '
 }
 
-system_json() {
-  jq -n '
-    [
-      {
-        Text: "Lock",
-        Subtext: "Lock the current session",
-        Value: "system-lock",
-        Icon: "system-lock-screen-symbolic"
-      },
-      {
-        Text: "Suspend",
-        Subtext: "Suspend the machine",
-        Value: "system-suspend",
-        Icon: "weather-clear-night-symbolic"
-      },
-      {
-        Text: "Restart",
-        Subtext: "Reboot the machine",
-        Value: "system-restart",
-        Icon: "system-reboot-symbolic"
-      },
-      {
-        Text: "Shutdown",
-        Subtext: "Power off the machine",
-        Value: "system-shutdown",
-        Icon: "system-shutdown-symbolic"
-      }
-    ]
-  '
-}
-
-preview_blocked() {
-  local title="$1"
-  local message="$2"
-
-  printf "%s\n\n%s\n" "$title" "$message"
-}
-
 open_menu() {
   local target="${1:-main}"
   local menu_id=""
   local prompt=""
 
   case "${target,,}" in
-    main | go | "")
-      menu_id="menus:keystone-main"
-      prompt="Go"
-      ;;
-    learn)
-      menu_id="menus:keystone-learn"
-      prompt="Learn"
-      ;;
-    capture)
-      menu_id="menus:keystone-capture"
-      prompt="Capture"
-      ;;
     screenshot)
       menu_id="menus:keystone-screenshot"
       prompt="Screenshot"
@@ -377,14 +106,6 @@ open_menu() {
     agents)
       menu_id="menus:keystone-agents"
       prompt="Agents"
-      ;;
-    toggle)
-      menu_id="menus:keystone-toggle"
-      prompt="Toggle"
-      ;;
-    style)
-      menu_id="menus:keystone-style"
-      prompt="Style"
       ;;
     theme)
       menu_id="menus:keystone-theme"
@@ -394,17 +115,13 @@ open_menu() {
       menu_id="menus:keystone-background"
       prompt="Background"
       ;;
-    setup)
-      menu_id="menus:keystone-setup"
-      prompt="Setup"
-      ;;
-    system)
-      menu_id="menus:keystone-system"
-      prompt="System"
+    install)
+      menu_id="menus:keystone-install"
+      prompt="Install"
       ;;
     *)
-      menu_id="menus:keystone-main"
-      prompt="Go"
+      printf "Unknown Walker submenu: %s\n" "$target" >&2
+      return 2
       ;;
   esac
 
@@ -419,22 +136,7 @@ dispatch() {
   IFS=$'\t' read -r action arg1 arg2 <<<"$payload"
 
   case "$action" in
-    learn | capture | screenshot | toggle | style | theme | background | setup | system | agents)
-      ;;
-    open-apps)
-      detach walker
-      ;;
-    open-photos-search)
-      detach "$(keystone_cmd keystone-photos-menu)" prompt-query
-      ;;
-    open-keybindings)
-      detach "$(keystone_cmd keystone-menu-keybindings)"
-      ;;
-    open-url)
-      detach xdg-open "$arg1"
-      ;;
-    screenrecord)
-      detach "$(keystone_cmd keystone-screenrecord)"
+    screenshot | theme | background | agents)
       ;;
     run-update)
       # CRITICAL: delegate to the dedicated update submenu's dispatch path
@@ -446,10 +148,9 @@ dispatch() {
       # change to the launch contract belongs in
       # update_menu.rs::dispatch, not duplicated here.
       #
-      # main_json hides this entry when KEYSTONE_MENU_SHOW_UPDATE is not "true",
-      # but `dispatch run-update` is a public argv surface and Walker/Elephant
-      # can replay a cached Value after a rebuild. Under `set -euo pipefail` a
-      # missing `ks` would fail silently, so report it.
+      # The Quattro catalog hides this entry when `ks` is absent, but
+      # `dispatch run-update` remains a public argv surface. Under
+      # `set -euo pipefail` a missing `ks` would fail silently, so report it.
       if ! command -v ks >/dev/null 2>&1; then
         notify "Update unavailable" "This host has no keystone ks CLI."
         exit 0
@@ -462,32 +163,11 @@ dispatch() {
     screenshot-clipboard)
       detach "$(keystone_cmd keystone-screenshot)" smart clipboard
       ;;
-    toggle-idle)
-      detach "$(keystone_cmd keystone-idle-toggle)"
-      ;;
-    toggle-nightlight)
-      detach "$(keystone_cmd keystone-nightlight-toggle)"
-      ;;
-    toggle-bar)
-      detach "$(keystone_cmd omarchy-toggle-bar)"
-      ;;
     theme-select)
       detach "$(keystone_cmd keystone-theme-switch)" "$arg1"
       ;;
     background-select)
       detach "$(keystone_cmd keystone-theme-switch)" --background "$arg1"
-      ;;
-    system-lock)
-      "$(keystone_cmd keystone-lock)"
-      ;;
-    system-suspend)
-      "$(keystone_cmd keystone-suspend)"
-      ;;
-    system-restart)
-      systemctl reboot
-      ;;
-    system-shutdown)
-      systemctl poweroff
       ;;
     blocked)
       notify "$arg1" "$arg2"
@@ -504,29 +184,9 @@ case "${1:-}" in
     shift
     open_menu "$@"
     ;;
-  main-json)
-    shift
-    main_json "$@"
-    ;;
-  learn-json)
-    shift
-    learn_json "$@"
-    ;;
-  capture-json)
-    shift
-    capture_json "$@"
-    ;;
   screenshot-json)
     shift
     screenshot_json "$@"
-    ;;
-  toggle-json)
-    shift
-    toggle_json "$@"
-    ;;
-  style-json)
-    shift
-    style_json "$@"
     ;;
   theme-json)
     shift
@@ -536,20 +196,12 @@ case "${1:-}" in
     shift
     background_json "$@"
     ;;
-  system-json)
-    shift
-    system_json "$@"
-    ;;
-  preview-blocked)
-    shift
-    preview_blocked "$@"
-    ;;
   dispatch)
     shift
     dispatch "$@"
     ;;
   *)
-    echo "Usage: keystone-main-menu {open-menu|main-json|learn-json|capture-json|screenshot-json|toggle-json|style-json|theme-json|background-json|system-json|preview-blocked|dispatch} ..." >&2
+    echo "Usage: keystone-main-menu {open-menu|screenshot-json|theme-json|background-json|dispatch} ..." >&2
     exit 1
     ;;
 esac

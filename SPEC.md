@@ -103,37 +103,48 @@ carry competing copies. The desktop hook:
   union before selection.
 - A headless host MUST be able to select a theme without this product.
 
-## Menu System (Super+Escape)
+## Menu System
 
-The main menu provides hierarchical access to all desktop functions. Accessed via `Super+Escape` or power button.
+The Omarchy Quattro QML menu is the primary hierarchical launcher.
+`Super+Space` opens the root, `Super+Alt+Space` opens the native Apps route,
+and `Super+Escape` or the power button opens System. The Quattro bar button
+opens the same QML menu state. Walker MUST be used only for subordinate
+workflows that need Elephant providers, previews, dmenu, or secure input.
 
 ### Menu Structure
 
 ```
-Main Menu
-├── Apps          → Launch application picker (walker)
+Quattro Menu
+├── Apps          → QML-native desktop application provider with image icons
 ├── Learn         → Documentation and keybinding reference
-├── Capture       → Screenshot and screen recording
-├── Toggle        → Quick toggles (idle, nightlight, Quattro bar)
+├── Trigger       → Optional Photos/Agents, capture, and toggles
 ├── Style         → Theme and wallpaper selection
 │   ├── Theme     → Select a composed theme
-│   └── Background → Select a wallpaper from the current composed theme
+│   ├── Background → Select a wallpaper from the current composed theme
+│   └── Menu Bar  → Quattro bar settings
 ├── Setup         → System configuration
 │   ├── Audio     → Audio device selection
-│   ├── Wifi      → Network configuration
-│   ├── Bluetooth → Bluetooth pairing
-│   └── Monitors  → Display configuration
+│   ├── Network   → Network configuration
+│   ├── Monitors  → Display configuration
+│   ├── Default
+│   │   └── Agent → Select an already-installed command-line agent
+│   └── Printers, hardware, fingerprint, accounts, and secrets when available
 ├── Install       → Package installation (requires `ks` to apply; hidden when
 │                   the integration.ksPackage option is null)
-├── Remove        → Package removal (via nix)
+├── Remove        → Disabled reminder that Nix owns removal
 ├── Update        → System update (requires `ks`; hidden when the
 │                   integration.ksPackage option is null)
+├── About         → Keystone documentation
 └── System        → Lock, suspend, restart, shutdown
 ```
 
-Menus that depend on keystone-owned tooling (`ks`, `agenix`) are hidden when
+Rows that depend on keystone-owned tooling (`ks`, `agenix`) are hidden when
 the corresponding `keystone.desktop.integration.*` package option is null —
-the same env-var gating used for the Photos and Agents surfaces.
+the same shell-service capability gating used for the Photos and Agents
+surfaces. Package and system actions MUST NOT expose Arch package managers,
+upstream installers, passwordless sudo, or privileged Omarchy operations.
+Default-agent selection MUST only list installed executables and MUST atomically
+record the selection without installing software or invoking an agent.
 
 ### Monitor Setup Submenu
 
@@ -208,11 +219,13 @@ connector names and declare the internal panel first when present.
 
 ### Menu Keybinding
 
-| Keybinding     | Action                       |
-| -------------- | ---------------------------- |
-| `$mod+Escape`  | Open main menu               |
-| `XF86PowerOff` | Open system submenu directly |
-| `$mod+K`       | Open keybindings reference   |
+| Keybinding       | Action                              |
+| ---------------- | ----------------------------------- |
+| `$mod+Space`     | Toggle the Quattro root menu        |
+| `$mod+Alt+Space` | Toggle the native Quattro Apps menu |
+| `$mod+Escape`    | Toggle the Quattro System menu      |
+| `XF86PowerOff`   | Toggle the Quattro System menu      |
+| `$mod+K`         | Open the Walker keybinding reference |
 
 ## Keybindings Reference
 

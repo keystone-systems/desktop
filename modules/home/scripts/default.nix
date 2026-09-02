@@ -217,7 +217,7 @@ let
   # Main menu script
   keystoneMenu = pkgs.writeShellScriptBin "keystone-menu" (builtins.readFile ./keystone-menu.sh);
 
-  # Main Mod+Escape backend for Elephant/Walker
+  # Shared backend for subordinate Elephant/Walker workflows.
   keystoneMainMenu = pkgs.writeShellScriptBin "keystone-main-menu" (
     builtins.readFile ./keystone-main-menu.sh
   );
@@ -342,11 +342,9 @@ let
   #    hardware enrollment, photos search, agenix secrets) is mkIf-gated off
   #    when its integration package is null. Its Walker component sets
   #    HideFromProviderlist, so dropping the command hides the surface.
-  # 2. keystone-main-menu is NEVER gated. It is the only Mod+Escape backend and
-  #    almost all of it (Apps/Learn/Capture/Toggle/Style/Setup/System) is pure
-  #    walker/hyprland/systemd. The two entries that need `ks` (Update, Install)
-  #    are hidden per-entry through KEYSTONE_MENU_SHOW_* env vars below, the
-  #    same mechanism as Photos and Agents.
+  # 2. keystone-main-menu is NEVER gated. The Quattro QML catalog is the
+  #    primary menu; this script remains the shared Walker backend for
+  #    subordinate workflows that need previews, dmenu, or secure input.
   #
   # Gating is per-entry mkIf (NOT `++ optionals`): the mkMerge list structure
   # must not depend on config or the module system hits infinite recursion.
@@ -377,13 +375,8 @@ let
       package = keystoneMenu;
       runtimeInputs = [
         pkgs.coreutils
-        pkgs.findutils
-        pkgs.gawk
-        pkgs.gnugrep
-        hyprlandPkg
-        pkgs.jq
         pkgs.libnotify
-        pkgs.walker
+        pkgs.systemd
         pkgs.xdg-utils
       ];
     })
@@ -544,9 +537,9 @@ let
       commandName = "keystone-main-menu";
       relativePath = "modules/home/scripts/keystone-main-menu.sh";
       package = keystoneMainMenu;
-      # `ks` is optional here: only the Update dispatch uses it, and that entry
-      # is hidden when the package is null. lib.optional keeps a null out of
-      # makeBinPath, which would otherwise abort evaluation.
+      # `ks` is optional here: only the guarded Update dispatch uses it.
+      # lib.optional keeps a null out of makeBinPath, which would otherwise
+      # abort evaluation.
       runtimeInputs = [
         pkgs.coreutils
         pkgs.findutils
@@ -562,20 +555,6 @@ let
         keystoneSuspendPkg
       ]
       ++ optional (cfg.integration.ksPackage != null) cfg.integration.ksPackage;
-      # Capability gating for ISSUE-REQ-1 (issue #390) and SPEC.md "Menu System":
-      # the script's main_json emits Photos/Agents/Update/Install entries only
-      # when the corresponding env var is "true". Values are evaluated at build
-      # time from the desktop config. Photos needs `ks photos`; Update needs
-      # `ks menu update`; Install opens keystone-package-menu, which is itself
-      # mkIf-gated on ksPackage.
-      extraEnvSetup = ''
-        export KEYSTONE_MENU_SHOW_PHOTOS="${
-          if cfg.photos.enable && cfg.integration.ksPackage != null then "true" else "false"
-        }"
-        export KEYSTONE_MENU_SHOW_AGENTS="${if cfg.agents.enable then "true" else "false"}"
-        export KEYSTONE_MENU_SHOW_UPDATE="${if cfg.integration.ksPackage != null then "true" else "false"}"
-        export KEYSTONE_MENU_SHOW_INSTALL="${if cfg.integration.ksPackage != null then "true" else "false"}"
-      '';
     })
     (mkIf (cfg.integration.ksPackage != null) (mkHomeScriptCommand {
       inherit config pkgs;

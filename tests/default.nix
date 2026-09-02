@@ -351,9 +351,8 @@ let
     "keystone-idle-toggle"
     "keystone-launch-walker"
     "keystone-lock"
-    # Mod+Escape entrypoint backend. MUST be installed with ksPackage null —
-    # keystone-menu.sh execs it from every case arm, so gating the package
-    # kills the whole Mod+Escape surface instead of hiding one entry.
+    # Shared backend for subordinate Walker workflows. It MUST be installed
+    # with ksPackage null; only its guarded update dispatch needs `ks`.
     "keystone-main-menu"
     "keystone-menu"
     "keystone-menu-keybindings"
@@ -923,6 +922,9 @@ in
         runtime=${omarchyRuntime}
         public_runtime=${omarchyRuntimePackage}
         shell_config=${templates}/omarchy/.config/omarchy/shell.json
+        menu_model="$runtime/shell/plugins/menu/MenuModel.js"
+        menu_qml="$runtime/shell/plugins/menu/Menu.qml"
+        app_library="$runtime/shell/services/AppLibrary.qml"
         test "$runtime" = "${omarchyPrivateRuntimePackage}"
         test -x "$runtime/bin/omarchy-launch-shell"
         test -x "$runtime/bin/omarchy-shell"
@@ -947,6 +949,22 @@ in
             exit 1
           }
         done < "$expectedPublicRuntimeCommandsPath"
+        if grep -Fq pacman "$menu_model"; then
+          echo "FAIL: Quattro menu guards still query Pacman" >&2
+          exit 1
+        fi
+        grep -Fq 'omarchy-pkg-present() { (( $# == 0 )); }' "$menu_model"
+        grep -Fq 'omarchy-pkg-missing() { (( $# > 0 )); }' "$menu_model"
+        for forbidden in Qt.Key_Delete deleteConfirmOpen requestDeleteSelected appLibrary.remove 'confirmText: "Uninstall"'; do
+          if grep -Fq "$forbidden" "$menu_qml"; then
+            echo "FAIL: Quattro Apps still exposes its upstream uninstall gesture: $forbidden" >&2
+            exit 1
+          fi
+        done
+        if grep -Fq omarchy-remove-launcher-entry "$app_library"; then
+          echo "FAIL: Quattro AppLibrary still reaches the omitted Arch removal command" >&2
+          exit 1
+        fi
         find "$runtime/bin" -mindepth 1 -maxdepth 1 \
           \( -type f -o -type l \) -printf '%f\n' | sort \
           > "$TMPDIR/actual-runtime-commands"
@@ -1107,18 +1125,31 @@ in
           ] | sort)
         ' "$shell_config" >/dev/null
         jq -e '.bar.layout.left == [{"id":"omarchy.menu"},{"id":"omarchy.workspaces"}]' "$shell_config" >/dev/null
+        grep -Fq 'omarchy-shell shell toggle omarchy.menu' "$runtime/shell/plugins/menu/BarWidget.qml"
+        grep -Fq 'visible: row.hasIcon && !row.isApp' "$runtime/shell/plugins/menu/Menu.qml"
+        grep -Fq 'root.appLibrary.iconSource(row.appIcon)' "$runtime/shell/plugins/menu/Menu.qml"
         jq -e '.bar.layout.center[] | select(.id == "keystone.voice" and .type == "command")' "$shell_config" >/dev/null
         jq -e '.bar.layout.center[] | select(.id == "keystone.recording" and .type == "command")' "$shell_config" >/dev/null
         jq -e '.bar.layout.right[] | select(.id == "keystone.health" and .type == "command")' "$shell_config" >/dev/null
         jq -e '[.bar.layout.center[] | select(.id | startswith("keystone.")) | select(.onClick == "keystone-menu capture")] | length == 2' "$shell_config" >/dev/null
         jq -e '
-          .["trigger.capture"].action == "keystone-menu capture"
-          and .["trigger.toggle"].action == "keystone-menu toggle"
+          .apps.provider == "apps"
+          and (.["trigger.capture"] | has("action") | not)
+          and .["trigger.capture.screenshot"].action == "keystone-menu screenshot"
+          and .["trigger.capture.screenrecord"].action == "keystone-menu screenrecord"
+          and (.["trigger.toggle"] | has("action") | not)
+          and .["trigger.toggle.idle-lock"].action == "keystone-menu idle-toggle"
+          and .["trigger.toggle.nightlight"].action == "keystone-menu nightlight-toggle"
+          and .["trigger.toggle.top-bar"].action == "keystone-menu bar-toggle"
           and .["style.theme"].action == "keystone-menu theme"
           and .["style.background"].action == "keystone-menu background"
+          and .["style.bar"].action == "keystone-menu bar-settings"
           and .["setup.monitors"].action == "keystone-menu monitors"
           and .["setup.network"].action == "keystone-menu wifi"
           and .["setup.audio"].action == "keystone-menu audio"
+          and .["setup.default.agent.codex"].action == "keystone-menu default-agent codex"
+          and .["setup.default.agent.hermes"].when == "command -v hermes >/dev/null 2>&1"
+          and ([to_entries[].value.action? | select(. != null) | split(" ")[0]] | unique == ["keystone-menu"])
         ' ${../modules/home/quattro-menu.jsonc} >/dev/null
         grep -Fq 'data.text === undefined || data.text === null' "$runtime/shell/plugins/bar/Bar.qml"
 
@@ -1190,22 +1221,57 @@ in
 
         cat > "$TMPDIR/fake-bin/keystone-main-menu" <<'EOF'
         #!${pkgs.runtimeShell}
-        printf '%s %s\n' "''${0##*/}" "$*"
+        printf '%s' "''${0##*/}"
+        if (( $# > 0 )); then
+          printf ' %s' "$*"
+        fi
+        printf '\n'
         EOF
         chmod +x "$TMPDIR/fake-bin/keystone-main-menu"
-        for backend in keystone-monitor-menu keystone-wifi-menu keystone-audio-menu; do
+        for backend in \
+          omarchy-menu \
+          keystone-monitor-menu \
+          keystone-wifi-menu \
+          keystone-audio-menu \
+          keystone-screenrecord \
+          keystone-idle-toggle \
+          keystone-nightlight-toggle \
+          omarchy-toggle-bar \
+          omarchy-shell; do
           ln -s keystone-main-menu "$TMPDIR/fake-bin/$backend"
         done
         invoke_menu() {
-          HOME="$TMPDIR/home" PATH="$TMPDIR/fake-bin:$PATH" \
-            ${pkgs.bash}/bin/bash ${../modules/home/scripts/keystone-menu.sh} "$1"
+          HOME="$TMPDIR/home" XDG_CONFIG_HOME="$TMPDIR/home/.config" PATH="$TMPDIR/fake-bin:$PATH" \
+            ${pkgs.bash}/bin/bash ${../modules/home/scripts/keystone-menu.sh} "$@"
         }
+        test "$(invoke_menu main)" = "omarchy-menu toggle"
+        test "$(invoke_menu apps)" = "omarchy-menu toggle apps"
+        test "$(invoke_menu system)" = "omarchy-menu toggle system"
+        test "$(invoke_menu capture)" = "omarchy-menu toggle trigger.capture"
+        test "$(invoke_menu toggle)" = "omarchy-menu toggle trigger.toggle"
         test "$(invoke_menu theme)" = "keystone-main-menu open-menu theme"
         test "$(invoke_menu background)" = "keystone-main-menu open-menu background"
         test "$(invoke_menu monitors)" = "keystone-monitor-menu open-menu"
         test "$(invoke_menu wifi)" = "keystone-wifi-menu open-menu"
         test "$(invoke_menu network)" = "keystone-wifi-menu open-menu"
         test "$(invoke_menu audio)" = "keystone-audio-menu open-menu"
+        test "$(invoke_menu screenrecord)" = "keystone-screenrecord"
+        test "$(invoke_menu idle-toggle)" = "keystone-idle-toggle"
+        test "$(invoke_menu nightlight-toggle)" = "keystone-nightlight-toggle"
+        test "$(invoke_menu bar-toggle)" = "omarchy-toggle-bar"
+        test "$(invoke_menu bar-settings)" = "omarchy-shell shell summon omarchy.bar-settings {}"
+        test -z "$(invoke_menu default-agent)"
+        if invoke_menu default-agent hermes; then
+          echo "FAIL: unavailable default agent was selected" >&2
+          exit 1
+        fi
+        test ! -e "$TMPDIR/home/.config/omarchy/defaults/agent"
+        ln -s keystone-main-menu "$TMPDIR/fake-bin/codex"
+        invoke_menu default-agent codex
+        test "$(invoke_menu default-agent)" = codex
+        test "$(cat "$TMPDIR/home/.config/omarchy/defaults/agent")" = codex
+        test "$(stat -c %a "$TMPDIR/home/.config/omarchy/defaults/agent")" = 600
+        test -z "$(find "$TMPDIR/home/.config/omarchy/defaults" -name '.agent.*' -print -quit)"
 
         bluetooth_log="$TMPDIR/bluetooth.log"
         cat > "$TMPDIR/fake-bin/bluetoothctl" <<'EOF'

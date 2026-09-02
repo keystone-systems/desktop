@@ -245,11 +245,22 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         grep -q 'hl.dispatch(hl.dsp.dpms' "$main" || fail "DPMS wake must dispatch inside the callback"
         grep -q 'timeout = 500, type = "oneshot"' "$main" || fail "DPMS wake timer contract changed"
 
-        for command in ghostty chromium nautilus wofi walker keystone-menu \
+        for command in ghostty chromium nautilus walker \
           keystone-menu-keybindings keystone-screenshot hyprpicker; do
           grep -E "app \\.\\. .*''${command}" "$main" >/dev/null \
             || fail "graphical launcher $command must run through uwsm app --"
         done
+        grep -Fq 'bind(mod .. " + Space", hl.dsp.exec_cmd("omarchy-menu toggle"))' "$main" \
+          || fail "Super+Space must toggle the Quattro root menu"
+        grep -Fq 'bind(mod .. " + ALT + Space", hl.dsp.exec_cmd("omarchy-menu toggle apps"))' "$main" \
+          || fail "Super+Alt+Space must toggle Quattro's native Apps provider"
+        grep -Fq 'bind(mod .. " + Escape", hl.dsp.exec_cmd("omarchy-menu toggle system"))' "$main" \
+          || fail "Super+Escape must toggle the Quattro System menu"
+        grep -Fq 'bind("XF86PowerOff", hl.dsp.exec_cmd("omarchy-menu toggle system"), { locked = true })' "$main" \
+          || fail "the power key must toggle the Quattro System menu while locked"
+        if grep -E 'bind\(mod \.\. " \+ (ALT \+ )?Space".*(walker|wofi)|bind\(mod \.\. " \+ Escape".*(walker|wofi)' "$main"; then
+          fail "Walker and Wofi must not remain primary menu bindings"
+        fi
         grep -Fq 'bind(mod .. " + SHIFT + Space", hl.dsp.exec_cmd("omarchy-toggle-bar"))' "$main" \
           || fail "the bar keybinding must use Quattro's supported toggle command"
         grep -Fq 'window_rule("omarchy-terminal", { class = "^(org.omarchy.terminal)$" }, { float = true, center = true, size = { 875, 600 } })' "$main" \

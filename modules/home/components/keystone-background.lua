@@ -3,7 +3,6 @@ NamePretty = "Background"
 Description = "Background picker"
 Icon = "image-x-generic-symbolic"
 HideFromProviderlist = true
-Parent = "keystone-style"
 History = false
 FixedOrder = true
 

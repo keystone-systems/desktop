@@ -1,19 +1,4 @@
-# desktop-main-menu-entries — behavioral gate on the Mod+Escape main menu.
-#
-# This check does NOT read the module source. It evaluates the HM module across
-# the (photos.enable, agents.enable, integration.ksPackage) matrix, takes the
-# keystone-main-menu derivation the module actually installs, RUNS it, and
-# compares the entry list it prints.
-#
-# It therefore fails on:
-#   * keystone-main-menu not installed (or installed twice) for a cell — the
-#     package-level mkIf that killed Mod+Escape entirely when ksPackage = null;
-#   * the production wrapper dropping extraEnvSetup — Photos/Agents/Update go
-#     missing even though the options are on;
-#   * the production wrapper emitting an empty live-checkout `for` loop — the
-#     command does not even parse, so main-json exits non-zero.
-#
-# Build: nix build .#checks.x86_64-linux.desktop-main-menu-entries
+# Behavioral gate for the primary Quattro QML menu and its capability flags.
 {
   pkgs,
   lib,
@@ -21,18 +6,12 @@
   home-manager,
 }:
 let
-  themeSwitch = pkgs.writeShellScriptBin "keystone-theme-switch" ''
-    case "$*" in
-      "--current") printf '%s\n' tokyo-night ;;
-      "--backgrounds --json") printf '%s\n' '{"theme":"tokyo-night","backgrounds":[{"path":"backgrounds/one.jpg","current":true},{"path":"backgrounds/two.jpg","current":false}]}' ;;
-      *) exit 2 ;;
-    esac
-  '';
   mkHome =
     {
       photos,
       agents,
       ks,
+      agenix,
     }:
     home-manager.lib.homeManagerConfiguration {
       inherit pkgs;
@@ -48,162 +27,142 @@ let
             photos.enable = photos;
             agents.enable = agents;
             integration = {
-              # pkgs.hello is a cheap stand-in for the `ks` CLI: main-json never
-              # execs it, it only has to be a non-null package.
               ksPackage = if ks then pkgs.hello else null;
-              agenixPackage = null;
+              agenixPackage = if agenix then pkgs.hello else null;
             };
           };
         }
       ];
     };
 
-  # The command exactly as the module installs it. Exactly-one is part of the
-  # contract: zero means the entrypoint was gated away, two means a package is
-  # registered both raw and wrapped (a home.packages collision at activation).
-  commandOf =
-    label: home: name:
-    let
-      matches = lib.filter (p: lib.getName p == name) home.config.home.packages;
-    in
-    if lib.length matches == 1 then
-      "${lib.head matches}/bin/${name}"
-    else
-      throw "desktop-main-menu-entries(${label}): expected exactly one home.packages entry named ${name}, found ${toString (lib.length matches)}";
-
-  # The contract, in one place. Mirrors the KEYSTONE_MENU_SHOW_* exports in
-  # modules/home/scripts/default.nix, and SPEC.md "Menu System".
-  #
-  #   Photos  — its option AND `ks`: keystone-photos-menu stays mkIf-gated on
-  #             integration.ksPackage, so the entry would open a dead submenu.
-  #   Agents  — its option only: keystone-agent-menu is unconditional, its only
-  #             external tool being agentctl.
-  #   Install — `ks`: the keystone-install provider execs the still-gated
-  #             keystone-package-menu.
-  #   Update  — `ks`: the entry SPEC.md names verbatim.
-  #
-  # Everything else is pure walker/hyprland/systemd and must survive a
-  # ksPackage = null host, which is the whole point of the Mod+Escape fix.
-  entriesFor =
-    {
-      photos,
-      agents,
-      ks,
-    }:
-    [ "Apps" ]
-    ++ lib.optional (photos && ks) "Photos"
-    ++ lib.optional agents "Agents"
-    ++ [
-      "Learn"
-      "Capture"
-      "Toggle"
-      "Style"
-      "Setup"
-    ]
-    ++ lib.optional ks "Install"
-    ++ [ "Remove" ]
-    ++ lib.optional ks "Update"
-    ++ [ "System" ];
-
   cells = [
     {
       photos = false;
       agents = false;
       ks = false;
+      agenix = false;
     }
-    # The regression cell: options on, no `ks`. The entries must still be
-    # hidden, and the menu must still work.
     {
       photos = true;
       agents = true;
       ks = false;
-    }
-    {
-      photos = false;
-      agents = false;
-      ks = true;
+      agenix = false;
     }
     {
       photos = true;
       agents = true;
       ks = true;
+      agenix = true;
     }
   ];
 
   mkCell =
     cell:
     let
-      label = "photos=${lib.boolToString cell.photos},agents=${lib.boolToString cell.agents},ks=${lib.boolToString cell.ks}";
-      command = commandOf label (mkHome cell) "keystone-main-menu";
-      expected = lib.concatStringsSep "," (entriesFor cell);
+      home = mkHome cell;
+      environment = lib.concatStringsSep "\n" home.config.systemd.user.services.omarchy-shell.Service.Environment;
+      expected = {
+        photos = cell.photos && cell.ks;
+        agents = cell.agents;
+        install = cell.ks;
+        update = cell.ks;
+        hardware = cell.ks;
+        secrets = cell.agenix;
+      };
+      assertion = name: value: ''
+        grep -Fqx 'KEYSTONE_MENU_SHOW_${lib.toUpper name}=${lib.boolToString value}' \
+          ${pkgs.writeText "quattro-menu-${name}-environment" environment}
+      '';
     in
-    ''
-      echo "-- ${label} --"
-      # env -i: the wrapper's own `export PATH` must supply every tool the
-      # script needs. Without scrubbing, this check's own nativeBuildInputs
-      # leak in and a wrapper that exports no PATH at all still passes — which
-      # is precisely the defect this test exists to catch.
-      if ! raw="$(env -i HOME="$HOME" PATH=/var/empty ${command} main-json)"; then
-        echo "FAIL(${label}): keystone-main-menu main-json failed to run" >&2
-        errors=$((errors + 1))
-      elif ! actual="$(printf '%s' "$raw" | ${pkgs.jq}/bin/jq -r '[.[].Text] | join(",")')"; then
-        echo "FAIL(${label}): main-json output was not valid JSON" >&2
-        errors=$((errors + 1))
-      elif [ "$actual" != "${expected}" ]; then
-        echo "FAIL(${label}): main menu entry list mismatch" >&2
-        echo "  expected: ${expected}" >&2
-        echo "  actual:   $actual" >&2
-        errors=$((errors + 1))
-      else
-        echo "PASS(${label}): ${expected}"
-      fi
-    '';
+    lib.concatStringsSep "\n" (lib.mapAttrsToList assertion expected);
 in
 pkgs.runCommand "desktop-main-menu-entries"
   {
-    # jq is referenced by absolute store path inside the cells so it cannot
-    # leak into the scrubbed environment under test.
     nativeBuildInputs = with pkgs; [
-      bash
       coreutils
+      gnugrep
+      jq
     ];
   }
   ''
-    set -uo pipefail
+    set -euo pipefail
 
-    # No display, no session: main-json is pure jq. HOME is set only so the
-    # script's own fallbacks resolve inside the sandbox.
-    export HOME="$PWD/home"
-    mkdir -p "$HOME"
+    menu=${../../modules/home/quattro-menu.jsonc}
 
-    errors=0
+    test "$(jq -r '
+      to_entries
+      | map(select(.key | contains(".") | not))
+      | map(.key)
+      | join(",")
+    ' "$menu")" = "apps,learn,trigger,style,setup,install,remove,update,about,system"
 
-    ${lib.concatStringsSep "\n" (map mkCell cells)}
+    jq -e '
+      .apps.provider == "apps"
+      and .apps.aliases == ["app", "applications"]
+      and .setup.aliases == ["settings"]
+      and .system.aliases == ["power-menu"]
+      and (.["trigger.capture"].aliases | contains(["capture", "screenshot", "screenrecord"]))
+    ' "$menu" >/dev/null
 
-    echo "-- Style background submenu --"
-    command="${
-      commandOf "style" (mkHome {
-        photos = false;
-        agents = false;
-        ks = false;
-      }) "keystone-main-menu"
-    }"
-    style="$(env -i HOME="$HOME" PATH="${themeSwitch}/bin" "$command" style-json)"
-    test "$(printf '%s' "$style" | ${pkgs.jq}/bin/jq -r '.[1].SubMenu')" = keystone-background
-    test "$(printf '%s' "$style" | ${pkgs.jq}/bin/jq -r '.[1].Value')" = background
-    backgrounds="$(env -i HOME="$HOME" PATH="${themeSwitch}/bin" "$command" background-json)"
-    test "$(printf '%s' "$backgrounds" | ${pkgs.jq}/bin/jq -r '[.[].Text] | join(",")')" = one.jpg,two.jpg
-    test "$(printf '%s' "$backgrounds" | ${pkgs.jq}/bin/jq -r '.[0].Value')" = $'background-select\tbackgrounds/one.jpg'
+    jq -e '
+      .["trigger.photos"].when != null
+      and .["trigger.agents"].when != null
+      and .["trigger.capture.screenrecord"].checked != null
+      and .["trigger.toggle.idle-lock"].checked != null
+      and .["trigger.toggle.top-bar"].checked != null
+      and .["setup.default.agent"].label == "Agent"
+      and .["setup.default"].aliases == ["default", "defaults"]
+      and .["setup.default.agent"].title == "Default Agent"
+      and .["setup.default.agent.codex"].action == "keystone-menu default-agent codex"
+      and .["setup.default.agent.hermes"].when == "command -v hermes >/dev/null 2>&1"
+      and ([to_entries[] | select(.key | startswith("setup.default.agent.")) | .key | ltrimstr("setup.default.agent.")] == ["agy", "claude", "codex", "copilot", "crush", "grok", "hermes", "omp", "opencode", "ori", "pi"])
+      and ([to_entries[] | select(.key | startswith("setup.default.agent.")) | .value.checked] | all(. != null))
+      and ([to_entries[] | select(.key | startswith("setup.default.agent.")) | .value.when] | all(. != null))
+      and .["remove.managed"].disabled == "true"
+    ' "$menu" >/dev/null
 
-    echo "-- Quattro bar toggle --"
-    toggle="$(env -i HOME="$HOME" PATH=/var/empty "$command" toggle-json)"
-    test "$(printf '%s' "$toggle" | ${pkgs.jq}/bin/jq -r '.[] | select(.Text == "Top bar") | .Value')" = toggle-bar
-    grep -Fq 'detach "$(keystone_cmd omarchy-toggle-bar)"' ${../../modules/home/scripts/keystone-main-menu.sh}
+    test "$(jq '[to_entries[] | select(.value.action != null and ((.value.icon // "") == ""))] | length' "$menu")" = 0
 
-    if [ "$errors" -gt 0 ]; then
-      echo "FAIL: $errors main-menu matrix cell(s) wrong" >&2
+    jq -r '[to_entries[].value.action? | select(. != null) | split(" ")[0]] | unique[]' "$menu" \
+      > "$TMPDIR/action-commands"
+    printf '%s\n' keystone-menu > "$TMPDIR/expected-action-commands"
+    diff -u "$TMPDIR/expected-action-commands" "$TMPDIR/action-commands"
+
+    if grep -Ein '(^|[^[:alnum:]_])(pacman|yay|sudo)([^[:alnum:]_]|$)|Arch Linux|/(usr|etc)/' "$menu"; then
+      echo "FAIL: Quattro menu exposes an Arch or privileged operation" >&2
       exit 1
     fi
+
+    main_menu=${../../modules/home/scripts/keystone-main-menu.sh}
+    mkdir -p "$TMPDIR/fake-bin"
+    cat > "$TMPDIR/fake-bin/keystone-theme-switch" <<'EOF'
+    #!${pkgs.runtimeShell}
+    case "$1" in
+      --list) printf '%s\n' '{"themes":[]}' ;;
+      --backgrounds) printf '%s\n' '{"backgrounds":[]}' ;;
+      *) exit 2 ;;
+    esac
+    EOF
+    cat > "$TMPDIR/fake-bin/notify-send" <<'EOF'
+    #!${pkgs.runtimeShell}
+    test "$#" -eq 2
+    printf '%s\t%s\n' "$1" "$2" >> "$NOTIFY_LOG"
+    EOF
+    chmod +x "$TMPDIR/fake-bin/keystone-theme-switch" "$TMPDIR/fake-bin/notify-send"
+
+    theme_payload="$(PATH="$TMPDIR/fake-bin:$PATH" ${pkgs.bash}/bin/bash "$main_menu" theme-json | jq -r '.[0].Value')"
+    background_payload="$(PATH="$TMPDIR/fake-bin:$PATH" ${pkgs.bash}/bin/bash "$main_menu" background-json | jq -r '.[0].Value')"
+    NOTIFY_LOG="$TMPDIR/notify.log" PATH="$TMPDIR/fake-bin:$PATH" \
+      ${pkgs.bash}/bin/bash "$main_menu" dispatch "$theme_payload"
+    NOTIFY_LOG="$TMPDIR/notify.log" PATH="$TMPDIR/fake-bin:$PATH" \
+      ${pkgs.bash}/bin/bash "$main_menu" dispatch "$background_payload"
+    printf '%s\n' \
+      $'Theme\tNo themes were found.' \
+      $'Background\tNo wallpapers were found for the current theme.' \
+      > "$TMPDIR/expected-notify.log"
+    diff -u "$TMPDIR/expected-notify.log" "$TMPDIR/notify.log"
+
+    ${lib.concatStringsSep "\n" (map mkCell cells)}
 
     touch "$out"
   ''

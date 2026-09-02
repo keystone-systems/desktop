@@ -24,6 +24,24 @@ theme, and background actions enter Keystone through the public
 `keystone-menu` command so background changes refresh Keystone's managed
 wallpaper link.
 
+The packaged QML catalog preserves Omarchy's root ordering, hierarchy,
+search metadata, route aliases, guards, state marks, and glyph icons while
+mapping every supported action to Keystone or NixOS. Its Apps provider stays
+QML-native and renders desktop-entry image icons. The bar launcher and
+Hyprland primary bindings use the same `omarchy.menu` plugin state. Walker is
+retained only behind `keystone-menu` for subordinate workflows that require
+Elephant, previews, dmenu, or secure input.
+
+The Setup → Default → Agent hierarchy exposes only agent executables already
+present in the session command environment. `keystone-menu default-agent`
+reads or atomically records that choice; it never installs software, elevates
+privileges, or launches the selected agent. This supplies the public route
+used by upstream `omarchy-agent --pick` without importing Omarchy's installers.
+
+The packaged runtime adapter disables upstream Arch package guard queries and
+the Apps-provider uninstall gesture. Nix owns package presence and removal;
+the QML menu never invokes Pacman or an omitted Omarchy removal command.
+
 Keystone owns service lifecycle, theme generations and rollback, privileged
 operations, and package or system updates. It does not package Quattro's
 installation, migration, package-manager, or system-management scripts; does

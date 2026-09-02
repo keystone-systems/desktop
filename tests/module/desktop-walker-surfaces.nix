@@ -30,9 +30,14 @@ pkgs.runCommand "test-desktop-walker-surfaces"
       exit 1
     }
 
-    # ISSUE-REQ-2: $mod+Escape must default to the System menu.
-    if ! grep -F 'bind(mod .. " + Escape", hl.dsp.exec_cmd(app .. "keystone-menu system"))' "$hyprland_conf" >/dev/null; then
-      fail "ISSUE-REQ-2: template \$mod+Escape bind must launch the System menu through UWSM"
+    # The primary surface is Quattro QML. Walker remains available only for
+    # the registered subordinate providers checked below.
+    if ! grep -F 'bind(mod .. " + Escape", hl.dsp.exec_cmd("omarchy-menu toggle system"))' "$hyprland_conf" >/dev/null; then
+      fail "template \$mod+Escape bind must toggle Quattro's System menu"
+    fi
+    if grep -Fq '"keystone-main"' "$components/launcher.nix" \
+      || [[ -e "$components/keystone-main.lua" ]]; then
+      fail "the retired Walker root provider must not remain registered or packaged"
     fi
 
     # Every submenu emitted by a backend, and every menus: provider launched by
@@ -57,8 +62,9 @@ pkgs.runCommand "test-desktop-walker-surfaces"
         || fail "Elephant provider $provider has a mismatched Name"
     done < "$TMPDIR/emitted-providers"
 
-    grep -Fxq 'Parent = "keystone-style"' "$components/keystone-background.lua" \
-      || fail "keystone-background must be a child of keystone-style"
+    if grep -Fq 'Parent = "keystone-style"' "$components/keystone-background.lua"; then
+      fail "the background provider must not retain the retired Walker Style parent"
+    fi
     grep -Fq 'keystone-main-menu") .. " background-json' \
       "$components/keystone-background.lua" \
       || fail "keystone-background must read background-json"
@@ -98,12 +104,6 @@ pkgs.runCommand "test-desktop-walker-surfaces"
     # ISSUE-REQ-5: Fingerprint menu runtime inputs must include fprintd.
     if ! grep -E 'pkgs\.fprintd' "$default_nix" >/dev/null; then
       fail "ISSUE-REQ-5: default.nix must include pkgs.fprintd in keystoneFingerprintMenu runtimeInputs"
-    fi
-
-    # ISSUE-REQ-1: Top-level menu entries must be gated by capability env vars
-    # wired from the Nix module.
-    if ! grep -E 'KEYSTONE_MENU_SHOW_(PHOTOS|AGENTS|CONTEXTS)' "$main_menu" >/dev/null; then
-      fail "ISSUE-REQ-1: keystone-main-menu.sh must gate Photos/Agents/Contexts entries via KEYSTONE_MENU_SHOW_* env vars"
     fi
 
     touch "$out"

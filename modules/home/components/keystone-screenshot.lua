@@ -3,7 +3,6 @@ NamePretty = "Screenshot"
 Description = "Screenshot actions"
 Icon = "applets-screenshooter"
 HideFromProviderlist = true
-Parent = "keystone-capture"
 History = false
 FixedOrder = true
 

@@ -67,10 +67,11 @@ local function bind(keys, dispatcher, options)
 end
 
 bind(mod .. " + Return", hl.dsp.exec_cmd(app .. "ghostty"))
-bind(mod .. " + Space", hl.dsp.exec_cmd(app .. "wofi --show drun"))
+bind(mod .. " + Space", hl.dsp.exec_cmd("omarchy-menu toggle"))
+bind(mod .. " + ALT + Space", hl.dsp.exec_cmd("omarchy-menu toggle apps"))
 bind(mod .. " + B", hl.dsp.exec_cmd(app .. "chromium --new-window --ozone-platform=wayland"))
 bind(mod .. " + E", hl.dsp.exec_cmd(app .. "nautilus --new-window"))
-bind(mod .. " + Escape", hl.dsp.exec_cmd(app .. "keystone-menu system"))
+bind(mod .. " + Escape", hl.dsp.exec_cmd("omarchy-menu toggle system"))
 bind(mod .. " + K", hl.dsp.exec_cmd(app .. "keystone-menu-keybindings"))
 bind(mod .. " + W", hl.dsp.window.close())
 bind("CTRL + ALT + DELETE", hl.dsp.window.close({ window = "address:.*" }))
@@ -145,7 +146,7 @@ for key, command in pairs({
 }) do
   bind(key, hl.dsp.exec_cmd(command), { locked = true })
 end
-bind("XF86PowerOff", hl.dsp.exec_cmd(app .. "keystone-menu system"), { locked = true })
+bind("XF86PowerOff", hl.dsp.exec_cmd("omarchy-menu toggle system"), { locked = true })
 bind("switch:on:Lid Switch", hl.dsp.exec_cmd("keystone-suspend --lid"), { locked = true })
 bind("switch:off:Lid Switch", function()
   -- Hyprland 0.56 advises deferring DPMS from key and switch handlers so

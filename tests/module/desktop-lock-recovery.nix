@@ -18,7 +18,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     startup_config="${../..}/pkgs/keystone-hyprlock-startup.conf"
     hypridle_conf="${../..}/templates/hyprland/.config/hypr/hypridle.conf"
     hyprland_conf="${../..}/templates/hyprland/.config/hypr/hyprland.lua"
-    main_menu="${../..}/modules/home/scripts/keystone-main-menu.sh"
+    menu_router="${../..}/modules/home/scripts/keystone-menu.sh"
     test_root="$TMPDIR/lock-test"
     fake_bin="$test_root/bin"
     state_file="$test_root/state"
@@ -196,7 +196,7 @@ pkgs.runCommand "test-desktop-lock-recovery"
     }
 
     menu_arm() {
-      grep -A4 "$1)" "$main_menu"
+      grep -A3 "  $1 |" "$menu_router"
     }
 
     # 1. Protocol state corroborated by a live Hyprlock client is authoritative.
@@ -438,9 +438,9 @@ pkgs.runCommand "test-desktop-lock-recovery"
       grep -q 'keystone-suspend --lid' "$hyprland_conf"
     check "Hyprland must accept a supervised replacement lock client" \
       grep -q 'allow_session_lock_restore = true' "$hyprland_conf"
-    menu_arm system-lock | grep -q 'keystone_cmd keystone-lock' \
+    menu_arm lock | grep -q 'keystone_cmd keystone-lock' \
       || fail "the System menu lock entry must run keystone-lock"
-    menu_arm system-suspend | grep -q 'keystone_cmd keystone-suspend' \
+    menu_arm suspend | grep -q 'keystone_cmd keystone-suspend' \
       || fail "the System menu suspend entry must use keystone-suspend"
 
     cat > "$fake_bin/keystone-lock" <<'EOF'
