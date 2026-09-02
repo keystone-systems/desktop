@@ -181,6 +181,7 @@ let
           pkgs.python3
         ];
         passthru = {
+          inherit quickshell;
           inherit
             publicRuntimeCommandNames
             runtimeCommandNames
@@ -196,6 +197,13 @@ let
           --replace-fail \
             'outputText = data.text || String(raw || "").trim()' \
             'outputText = data.text === undefined || data.text === null ? String(raw || "").trim() : String(data.text)'
+        substituteInPlace "$out/shell/plugins/bar/Bar.qml" \
+          --replace-fail \
+            'if ("moduleName" in target) target.moduleName = moduleName' \
+            'if (!commandCustom && "moduleName" in target) target.moduleName = moduleName' \
+          --replace-fail \
+            'if ("settings" in target) target.settings = moduleSettings' \
+            'if (!commandCustom && "settings" in target) target.settings = moduleSettings'
         rm -rf "$out/bin"
         mkdir -p "$out/bin"
         cp ${../modules/home/quattro-menu.jsonc} "$out/default/omarchy/omarchy-menu.jsonc"

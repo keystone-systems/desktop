@@ -3,10 +3,11 @@
 # Called from flake.nix as:
 #   import ./tests { inherit self nixpkgs home-manager; system = "x86_64-linux"; }
 #
-# Everything here is eval-only or grep-only — no check builds a compositor.
-# The nixosSystem evals below intentionally consume the flake's public
-# contract (nixosModules.default / homeModules.default) exactly the way an
-# external consumer would, so contract regressions fail here first.
+# Checks evaluate or render the public contract and may execute isolated,
+# headless fixtures. No check connects to the developer's active compositor.
+# The nixosSystem evals below intentionally consume nixosModules.default /
+# homeModules.default exactly the way an external consumer would, so contract
+# regressions fail here first.
 {
   self,
   nixpkgs,
@@ -1203,6 +1204,244 @@ in
         git -C "$other" commit -m second
         git -C "$other" push
         KEYSTONE_CONFIG_CHECKOUT="$checkout" "$runtime/bin/omarchy-update-available"
+        touch "$out"
+      '';
+
+  quattro-readonly-command-properties =
+    pkgs.runCommand "quattro-readonly-command-properties"
+      {
+        nativeBuildInputs = [
+          pkgs.coreutils
+          pkgs.gnugrep
+          pkgs.python3
+        ];
+      }
+      ''
+        runtime=${omarchyRuntime}
+        cp -r "$runtime/shell" "$TMPDIR/shell"
+        chmod -R u+w "$TMPDIR/shell"
+
+        # Loading the full Bar requires Quickshell's PanelWindow backend. Build
+        # a compositor-free harness from the packaged source instead: copy the
+        # exact ModuleSlot.injectProps function and exact CustomCommandModule
+        # component, then instantiate them through the production Loader path.
+        # This remains an executable component regression, not a source grep.
+        python3 - "$TMPDIR/shell/plugins/bar/Bar.qml" "$TMPDIR/shell/shell.qml" <<'PY'
+        from pathlib import Path
+        import sys
+
+        source = Path(sys.argv[1]).read_text()
+        def unique_start(text, marker, scope_name):
+            count = text.count(marker)
+            if count != 1:
+                raise RuntimeError(f"expected one {scope_name}, found {count}")
+            return text.index(marker)
+
+        module_start = unique_start(source, "  component ModuleSlot: Item {", "ModuleSlot component")
+        custom_start = unique_start(
+            source,
+            "  component CustomCommandModule: WidgetButton {",
+            "CustomCommandModule component",
+        )
+        module_scope = source[module_start:custom_start]
+        inject_marker = "    function injectProps() {"
+        inject_start = module_start + unique_start(
+            module_scope, inject_marker, "ModuleSlot.injectProps function"
+        )
+        inject_end = source.index("\n\n    Component {", inject_start)
+        inject = source[inject_start:inject_end]
+        declarations = []
+        for declaration in (
+            "readonly property string moduleName:",
+            "readonly property var moduleSettings:",
+            "readonly property string customType:",
+            "readonly property bool commandCustom:",
+        ):
+            matches = [line for line in module_scope.splitlines() if declaration in line]
+            if len(matches) != 1:
+                raise RuntimeError(
+                    f"expected one ModuleSlot {declaration} declaration, found {len(matches)}"
+                )
+            declarations.append(matches[0])
+
+        classifier_marker = "  function customModuleType(entry) {"
+        classifier_start = unique_start(source, classifier_marker, "customModuleType classifier")
+        classifier_end = source.index("\n\n  function customModuleSource", classifier_start)
+        classifier = source[classifier_start:classifier_end]
+        custom_end = source.rfind("\n}")
+        custom = source[custom_start:custom_end]
+        for declaration in (
+            "readonly property string moduleName:",
+            "readonly property var settings:",
+        ):
+            count = custom.count(declaration)
+            if count != 1:
+                raise RuntimeError(
+                    f"expected one CustomCommandModule {declaration} declaration, found {count}"
+                )
+
+        fixture = r"""import QtQuick
+        import Quickshell
+        import Quickshell.Io
+        import qs.Commons
+        import qs.Ui
+        import "plugins/bar/BarModel.js" as BarModel
+
+        ShellRoot {
+          Item {
+            id: root
+
+            property string fontFamily: Style.font.family
+            property color barForeground: Color.foreground
+            property color urgent: Color.urgent
+            property bool vertical: false
+            property int barSize: Style.bar.sizeHorizontal
+            property bool foregroundAnimationEnabled: false
+
+            function entryId(entry) { return String(entry.id || "") }
+            function entrySettings(entry) {
+              var settings = {}
+              for (var key in entry) {
+                if (key !== "id" && key !== "type") settings[key] = entry[key]
+              }
+              return settings
+            }
+            function run(command) {}
+            function runProcess(process) { process.running = true }
+            function registerClickTarget(target) {}
+            function unregisterClickTarget(target) {}
+            function showTooltip(target, text) {}
+            function hideTooltip(target) {}
+
+        """ + classifier + r"""
+
+            component ModuleSlot: Item {
+              id: slot
+
+              required property var entry
+              readonly property var activeItem: componentLoader.item
+
+        """ + "\n".join(declarations) + r"""
+
+              Loader {
+                id: componentLoader
+                sourceComponent: slot.commandCustom ? customCommandModuleComponent : writableModuleComponent
+                onLoaded: {
+                  slot.injectProps()
+                  Qt.callLater(slot.injectProps)
+                }
+              }
+
+        """ + inject + r"""
+
+              Component {
+                id: customCommandModuleComponent
+                CustomCommandModule { entry: slot.entry }
+              }
+
+              Component {
+                id: writableModuleComponent
+                QtObject {
+                  property var bar: null
+                  property string moduleName: ""
+                  property var settings: null
+                }
+              }
+            }
+
+        """ + custom + r"""
+
+            ModuleSlot {
+              id: commandProbe
+              entry: ({
+                id: "keystone.readonly-probe",
+                type: "command",
+                exec: "",
+                text: "probe"
+              })
+            }
+
+            ModuleSlot {
+              id: writableProbe
+              entry: ({
+                id: "keystone.writable-probe",
+                type: "registered",
+                text: "assigned"
+              })
+            }
+
+            Timer {
+              interval: 250
+              running: true
+              onTriggered: {
+                if (!commandProbe.commandCustom || writableProbe.commandCustom) {
+                  console.error("KEYSTONE_PROBE_FAILED: production commandCustom discriminator changed")
+                } else if (!commandProbe.activeItem || !writableProbe.activeItem) {
+                  console.error("KEYSTONE_PROBE_FAILED: command component was not instantiated")
+                } else {
+                  var moduleNameReadonly = false
+                  var settingsReadonly = false
+                  try {
+                    commandProbe.activeItem.moduleName = "mutation-must-fail"
+                  } catch (error) {
+                    moduleNameReadonly = String(error).indexOf("read-only property") !== -1
+                  }
+                  try {
+                    commandProbe.activeItem.settings = ({ text: "mutation-must-fail" })
+                  } catch (error) {
+                    settingsReadonly = String(error).indexOf("read-only property") !== -1
+                  }
+
+                  if (!moduleNameReadonly || !settingsReadonly) {
+                    console.error("KEYSTONE_PROBE_FAILED: command properties are not readonly")
+                  } else if (writableProbe.activeItem.moduleName !== "keystone.writable-probe") {
+                    console.error("KEYSTONE_PROBE_FAILED: writable moduleName was not injected")
+                  } else if (!writableProbe.activeItem.settings || writableProbe.activeItem.settings.text !== "assigned") {
+                    console.error("KEYSTONE_PROBE_FAILED: writable settings were not injected")
+                  } else if (writableProbe.activeItem.bar !== root) {
+                    console.error("KEYSTONE_PROBE_FAILED: writable bar was not injected")
+                  } else {
+                    console.log("KEYSTONE_PROBE_OK")
+                  }
+                }
+                Qt.quit()
+              }
+            }
+          }
+        }
+        """
+        Path(sys.argv[2]).write_text(fixture)
+        PY
+
+        mkdir -p "$TMPDIR/home" "$TMPDIR/runtime"
+        set +e
+        HOME="$TMPDIR/home" \
+          XDG_RUNTIME_DIR="$TMPDIR/runtime" \
+          OMARCHY_PATH="$runtime" \
+          QT_QPA_PLATFORM=offscreen \
+          QS_DISABLE_FILE_WATCHER=1 \
+          ${pkgs.coreutils}/bin/timeout 10s \
+          ${omarchyPrivateRuntimePackage.quickshell}/bin/quickshell -n -p "$TMPDIR/shell" \
+          >"$TMPDIR/quickshell.log" 2>&1
+        status=$?
+        set -e
+        cat "$TMPDIR/quickshell.log"
+        if [ "$status" -ne 0 ]; then
+          echo "FAIL: headless commandCustom fixture exited with $status" >&2
+          exit "$status"
+        fi
+        if grep -F 'Cannot assign to read-only property' "$TMPDIR/quickshell.log"; then
+          echo "FAIL: commandCustom construction wrote a readonly property" >&2
+          exit 1
+        fi
+        if grep -F 'KEYSTONE_PROBE_FAILED:' "$TMPDIR/quickshell.log"; then
+          echo "FAIL: packaged commandCustom fixture did not preserve readonly bindings" >&2
+          exit 1
+        fi
+        grep -Fq 'KEYSTONE_PROBE_OK' "$TMPDIR/quickshell.log" || {
+          echo "FAIL: packaged commandCustom fixture did not instantiate" >&2
+          exit 1
+        }
         touch "$out"
       '';
 
