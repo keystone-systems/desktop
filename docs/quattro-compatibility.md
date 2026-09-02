@@ -7,10 +7,15 @@ its official `v0.3.1` flake and follows Keystone's `nixpkgs` input.
 The packaged runtime preserves the upstream tree except for `bin/`. Keystone
 replaces that directory with an explicit allowlist, patches script shebangs,
 and supplies narrow delegates for operations Keystone owns. The shared
-runtime-package manifest supplies the shell service and NixOS with the same
-command closure. Home Manager installs only the packaged Quattro runtime in
-the interactive profile; the service keeps its larger command closure in its
-private `PATH`.
+runtime-package manifest gives the shell service its private command closure.
+The NixOS global profile receives only the bin-only public wrappers; the
+service keeps Quickshell, widget helpers, and its larger client-tool closure in
+its private `PATH`.
+
+The current source update is pinned at `b71dcad9`. Its complete 177-commit,
+235-path boundary and reproducer are recorded in the
+[repository audit](quattro-repository-audit.md). Any later upstream head needs
+a new delta classification before the lock moves again.
 
 The shell service uses a closed command environment: the immutable Quattro
 runtime comes first, followed by the Home Manager profile, the active NixOS

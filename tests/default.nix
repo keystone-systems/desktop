@@ -25,6 +25,8 @@ let
   lib = nixpkgs.lib;
 
   templates = ../templates;
+  omarchyAuditManifest = ../docs/audits/omarchy-b86d4505-b71dcad9.tsv;
+  omarchyLockRev = (builtins.fromJSON (builtins.readFile ../flake.lock)).nodes.omarchy.locked.rev;
   terminalTemplatePaths = map (entry: entry.path) terminal.lib.dotfiles.manifest;
   desktopTemplatePaths = map (file: lib.removePrefix "${toString templates}/" (toString file)) (
     lib.filesystem.listFilesRecursive templates
@@ -869,13 +871,16 @@ in
     pkgs.runCommand "quattro-runtime-contract"
       {
         nativeBuildInputs = [
+          pkgs.bash
           pkgs.coreutils
           pkgs.git
           pkgs.jq
           pkgs.gnugrep
+          pkgs.nodejs
+          pkgs.python3
         ];
         shellExecStartCount = toString (lib.length omarchyShellUnit.Service.ExecStart);
-        inherit omarchyShellPath;
+        inherit omarchyLockRev omarchyShellPath;
         enabledWidgetCommands = lib.concatStringsSep "\n" [
           "bash"
           "find"
@@ -948,6 +953,75 @@ in
         sort "$expectedRuntimeCommandsPath" > "$TMPDIR/expected-runtime-commands"
         diff -u "$TMPDIR/expected-runtime-commands" "$TMPDIR/actual-runtime-commands"
 
+        # The durable Git-range manifest must agree with the allowlist
+        # boundary embodied by this packaged runtime. The independent audit
+        # script verifies the history totals and all 235 paths.
+        audit_target="$(awk -F '\t' '$1 == "# target" { print $2 }' ${omarchyAuditManifest})"
+        test -n "$audit_target"
+        test "$omarchyLockRev" = "$audit_target" || {
+          echo "FAIL: flake.lock Omarchy rev $omarchyLockRev does not match audit target $audit_target" >&2
+          exit 1
+        }
+        awk -F '\t' \
+          '$1 !~ /^#/ && $1 != "status" && $2 == "executed" && $3 ~ /^bin\// { sub("^bin/", "", $3); print $3 }' \
+          ${omarchyAuditManifest} \
+          | sort -u > "$TMPDIR/audited-changed-runtime-commands"
+        printf '%s\n' \
+          omarchy-agent \
+          omarchy-agent-usage-codex \
+          omarchy-brightness-display-apple \
+          omarchy-default-agent \
+          omarchy-hyprland-monitor-scaling \
+          omarchy-toggle-bar \
+          | sort -u > "$TMPDIR/expected-changed-runtime-commands"
+        diff -u "$TMPDIR/expected-changed-runtime-commands" \
+          "$TMPDIR/audited-changed-runtime-commands"
+        awk -F '\t' '$1 !~ /^#/ && $1 != "status" && $2 == "excluded-command" { print $3 }' \
+          ${omarchyAuditManifest} \
+          | while IFS= read -r excluded; do
+            case "$excluded" in
+              bin/omarchy-dns)
+                # The privileged upstream implementation is excluded, but
+                # Keystone deliberately publishes a same-name Nix delegate.
+                # It must remain an external store symlink, never a copied
+                # regular file from the upstream bin directory.
+                test -L "$runtime/$excluded"
+                delegate_target="$(readlink -- "$runtime/$excluded")"
+                case "$delegate_target" in
+                  /nix/store/*-omarchy-dns/bin/omarchy-dns) ;;
+                  *)
+                    echo "FAIL: omarchy-dns is not the Keystone delegate: $delegate_target" >&2
+                    exit 1
+                    ;;
+                esac
+                ;;
+              *)
+                test ! -e "$runtime/$excluded" || {
+                  echo "FAIL: audited excluded command leaked into runtime: $excluded" >&2
+                  exit 1
+                }
+                ;;
+            esac
+          done
+
+        # Pin the compatibility semantics of every changed allowlisted script.
+        grep -Fq 'command+=(--interactive --prompt "$prompt")' \
+          "$runtime/bin/omarchy-agent"
+        grep -Fq 'if omarchy-cmd-missing "$agent"' "$runtime/bin/omarchy-agent"
+        grep -Fq 'command=(hermes --yolo)' "$runtime/bin/omarchy-agent"
+        grep -Fq '[codex, "-s", "read-only", "-a", "on-request", "app-server"]' \
+          "$runtime/bin/omarchy-agent-usage-codex"
+        grep -Fq 'device_cache="$XDG_RUNTIME_DIR/omarchy-brightness-display-apple.device"' \
+          "$runtime/bin/omarchy-brightness-display-apple"
+        grep -Fq '&& -c $cached' "$runtime/bin/omarchy-brightness-display-apple"
+        grep -Fq 'agent_installer="omarchy-install-hermes-cli"' \
+          "$runtime/bin/omarchy-default-agent"
+        test ! -e "$runtime/bin/omarchy-install-hermes-cli"
+        grep -Fq '[[ ! $active_monitor =~ ^[A-Za-z0-9._-]+$ ]]' \
+          "$runtime/bin/omarchy-hyprland-monitor-scaling"
+        grep -Fq 'omarchy-shell -q omarchy.bar syncHidden' \
+          "$runtime/bin/omarchy-toggle-bar"
+
         # The enabled layout is the source of the custom command-widget
         # contract. Derive both exec and click commands instead of maintaining
         # a second copy that could silently drift from shell.json.
@@ -1017,7 +1091,21 @@ in
           echo "FAIL: curated runtime retains an Arch or privileged-filesystem assumption" >&2
           exit 1
         fi
-        jq -e '.disabledPlugins | length == 11' "$shell_config" >/dev/null
+        jq -e '
+          .disabledPlugins | sort == ([
+            "omarchy.background",
+            "omarchy.clipboard",
+            "omarchy.dev-gallery",
+            "omarchy.emojis",
+            "omarchy.idle",
+            "omarchy.lock",
+            "omarchy.nightlight",
+            "omarchy.notifications",
+            "omarchy.osd",
+            "omarchy.polkit",
+            "omarchy.reminders"
+          ] | sort)
+        ' "$shell_config" >/dev/null
         jq -e '.bar.layout.left == [{"id":"omarchy.menu"},{"id":"omarchy.workspaces"}]' "$shell_config" >/dev/null
         jq -e '.bar.layout.center[] | select(.id == "keystone.voice" and .type == "command")' "$shell_config" >/dev/null
         jq -e '.bar.layout.center[] | select(.id == "keystone.recording" and .type == "command")' "$shell_config" >/dev/null
@@ -1033,6 +1121,14 @@ in
           and .["setup.audio"].action == "keystone-menu audio"
         ' ${../modules/home/quattro-menu.jsonc} >/dev/null
         grep -Fq 'data.text === undefined || data.text === null' "$runtime/shell/plugins/bar/Bar.qml"
+
+        # These portable upstream checks cover changed source Keystone copies.
+        # Notifications stay disabled, but their sanitizer is still verified
+        # as defense in depth for the immutable repository tree.
+        python3 "$runtime/test/shell.d/qml-text-format-scan.py" "$runtime" \
+          > "$TMPDIR/qml-text-format-violations"
+        test ! -s "$TMPDIR/qml-text-format-violations"
+        bash "$runtime/test/shell.d/notifications-test.sh"
         if grep -q '^KEYSTONE_CONFIG_CHECKOUT=' <<<"$standaloneShellEnvironment"; then
           echo "FAIL: standalone shell received a config checkout" >&2
           exit 1
