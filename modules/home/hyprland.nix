@@ -58,6 +58,33 @@ in
   config = mkIf (cfg.enable && cfg.environment == "hyprland") {
     home.packages = [ keystoneLockPkg ];
 
+    # Generic session invariants are immutable runtime wiring. UWSM inherits
+    # profile PATH and XDG_DATA_DIRS from the user manager; reconstructing
+    # either here duplicates profile entries and makes activation order part of
+    # the session contract. Terminal remains the sole owner of EDITOR.
+    xdg.configFile."uwsm/env".text = ''
+      export GDK_SCALE=2
+      export XCURSOR_SIZE=24
+      export XCURSOR_THEME=Adwaita
+      export GDK_BACKEND=wayland,x11
+      export QT_QPA_PLATFORM="wayland;xcb"
+      export QT_STYLE_OVERRIDE=kvantum
+      export SDL_VIDEODRIVER=wayland
+      export MOZ_ENABLE_WAYLAND=1
+      export ELECTRON_OZONE_PLATFORM_HINT=wayland
+      export OZONE_PLATFORM=wayland
+      export CHROMIUM_FLAGS="--enable-features=UseOzonePlatform --ozone-platform=wayland --gtk-version=4"
+      export XCOMPOSEFILE="$HOME/.XCompose"
+      export SSH_AUTH_SOCK="$XDG_RUNTIME_DIR/gcr/ssh"
+    '';
+
+    # Run before Home Manager links the generated file. Remove only the exact
+    # retired Stow source and the exact broken legacy HM generation target;
+    # every other filesystem type or symlink target fails closed.
+    home.activation.keystoneUwsmEnvironmentOwnership = lib.hm.dag.entryBefore [ "checkLinkTargets" ] ''
+      source ${../../lib/keystone-uwsm-migrate.sh}
+    '';
+
     # UWSM session target fix: greetd starts wayland-session-envelope@ but not
     # wayland-session@ which is what binds to graphical-session.target.
     # hypridle and other services depend on graphical-session.target, so we need

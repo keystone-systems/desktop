@@ -219,6 +219,9 @@ let
   };
   homeSshAgentEnabled = homeStandalone.config.services.ssh-agent.enable;
   homeSshAuthSock = homeStandalone.config.keystone.terminal.ssh.authSock;
+  generatedUwsmEnv = homeStandalone.config.xdg.configFile."uwsm/env".source;
+  uwsmMigrationBefore = homeStandalone.config.home.activation.keystoneUwsmEnvironmentOwnership.before;
+  uwsmMigrationData = homeStandalone.config.home.activation.keystoneUwsmEnvironmentOwnership.data;
   # A desktop must refuse terminal SSH auto-load outright: it would start a
   # second agent against a second passphrase store. Matched on the message so
   # an unrelated assertion failure cannot make this pass vacuously.
@@ -1656,7 +1659,9 @@ in
           builtins.hasAttr "gcr-ssh-agent-compat" homeStandalone.config.systemd.user.services
         );
         gcrSocket = "${evalHyprland.config.services.gnome.gcr-ssh-agent.package}/share/systemd/user/gcr-ssh-agent.socket";
-        uwsmEnv = "${templates}/hyprland/.config/uwsm/env";
+        uwsmEnv = generatedUwsmEnv;
+        uwsmMigrationBefore = lib.concatStringsSep " " uwsmMigrationBefore;
+        inherit uwsmMigrationData;
         normalLockExecStart =
           homeStandalone.config.systemd.user.services.keystone-hyprlock.Service.ExecStart;
         startupLockExecStart =
@@ -1684,6 +1689,7 @@ in
           "hyprlockPam"
           "startupPam"
           "passwdPam"
+          "uwsmMigrationData"
         ];
       }
       ''
@@ -1717,6 +1723,29 @@ in
           'SSH_AUTH_SOCK=%t/gcr/ssh' "$gcrSocket"
         require "the UWSM template does not export the canonical GCR socket" \
           '^export SSH_AUTH_SOCK="\$XDG_RUNTIME_DIR/gcr/ssh"$' "$uwsmEnv"
+        require "the generated UWSM environment lacks the Wayland GTK backend" \
+          '^export GDK_BACKEND=wayland,x11$' "$uwsmEnv"
+        require "the generated UWSM environment lacks the compose file" \
+          '^export XCOMPOSEFILE="\$HOME/\.XCompose"$' "$uwsmEnv"
+        refute "the generated UWSM environment reconstructs PATH" \
+          '^export PATH=' "$uwsmEnv"
+        refute "the generated UWSM environment reconstructs XDG_DATA_DIRS" \
+          '^export XDG_DATA_DIRS=' "$uwsmEnv"
+        refute "the generated UWSM environment owns Terminal's EDITOR" \
+          '^export EDITOR=' "$uwsmEnv"
+        case " $uwsmMigrationBefore " in
+          *' checkLinkTargets '*) ;;
+          *)
+            echo "FAIL: UWSM migration does not run before Home Manager collision checks" >&2
+            exit 1
+            ;;
+        esac
+        require "the UWSM migration does not use the dry-run-aware activation shell" \
+          '^ *source ${../lib/keystone-uwsm-migrate.sh}$' "$uwsmMigrationDataPath"
+        if [ -e ${templates}/hyprland/.config/uwsm/env ]; then
+          echo "FAIL: the Desktop template still duplicates the generated UWSM environment" >&2
+          exit 1
+        fi
 
         expect "normal Hyprlock service does not use the packaged command" \
           "$normalLockExecStart" "$expectedNormalLockExecStart"
@@ -1871,4 +1900,5 @@ in
       system
       ;
   };
+  desktop-uwsm-migration = import ./module/desktop-uwsm-migration.nix { inherit pkgs; };
 }

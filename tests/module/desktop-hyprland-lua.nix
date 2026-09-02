@@ -531,13 +531,8 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         if grep -R 'WLR_RENDERER_ALLOW_SOFTWARE\|GTK_THEME' "$templates/hyprland/.config/uwsm"; then
           fail "obsolete or runtime-theme-conflicting environment remains"
         fi
-        if grep -q '^export HYPR' "$templates/hyprland/.config/uwsm/env"; then
-          fail "HYPR variables belong in env-hyprland"
-        fi
         grep -q '^export HYPRCURSOR_' "$templates/hyprland/.config/uwsm/env-hyprland" \
           || fail "env-hyprland has no Hyprland-specific variables"
-        grep -Fq 'export XDG_DATA_DIRS="''${XDG_DATA_DIRS:-' "$templates/hyprland/.config/uwsm/env" \
-          || fail "XDG_DATA_DIRS must have a nonempty default"
 
         touch "$out"
   ''
