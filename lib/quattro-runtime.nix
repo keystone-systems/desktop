@@ -283,6 +283,7 @@ let
   ];
   widgetRuntimePackages = with pkgs; [
     glib
+    gtk3
     inotify-tools
     libxkbcommon
     uwsm
