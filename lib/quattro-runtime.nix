@@ -238,6 +238,7 @@ let
         mkdir -p "$out/bin"
         ${pkgs.lib.concatMapStringsSep "\n" (name: ''
           makeWrapper ${runtimeTree}/bin/${name} "$out/bin/${name}" \
+            --set-default OMARCHY_PATH ${runtimeTree} \
             --prefix PATH : ${pkgs.lib.makeBinPath servicePackages}
         '') publicRuntimeCommandNames}
       '';

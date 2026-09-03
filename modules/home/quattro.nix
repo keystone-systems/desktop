@@ -15,7 +15,12 @@ in
     # The runtime's public commands belong in the interactive profile. Its
     # large tool closure belongs only to the service PATH below.
     home.packages = [ quattro.publicRuntime ];
+    # Shell session variables reach interactive terminals only. Hyprland binds
+    # and uwsm launches inherit the systemd user manager's environment, so the
+    # runtime path must also be published through environment.d; otherwise
+    # omarchy-menu fails with "OMARCHY_PATH is not set" from every keybind.
     home.sessionVariables.OMARCHY_PATH = runtime;
+    systemd.user.sessionVariables.OMARCHY_PATH = toString runtime;
     systemd.user.services.omarchy-shell = {
       Unit = {
         Description = "Omarchy Quattro desktop shell";

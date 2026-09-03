@@ -917,6 +917,7 @@ in
         keystoneMenuBin = "${keystoneMenuPackage}/bin";
         standaloneShellEnvironment = lib.concatStringsSep "\n" omarchyShellUnit.Service.Environment;
         configuredShellEnvironment = lib.concatStringsSep "\n" configuredOmarchyShellEnvironment;
+        managerOmarchyPath = homeStandalone.config.systemd.user.sessionVariables.OMARCHY_PATH or "";
       }
       ''
         runtime=${omarchyRuntime}
@@ -948,7 +949,20 @@ in
             echo "FAIL: public Quattro command $command has no closed PATH" >&2
             exit 1
           }
+          # Hyprland binds and uwsm launches run without shell session
+          # variables, so every public command must default OMARCHY_PATH to
+          # its own runtime tree instead of failing "OMARCHY_PATH is not set".
+          grep -Fq "OMARCHY_PATH=\''${OMARCHY_PATH-'$runtime'}" "$public_runtime/bin/$command" || {
+            echo "FAIL: public Quattro command $command does not default OMARCHY_PATH to $runtime" >&2
+            exit 1
+          }
         done < "$expectedPublicRuntimeCommandsPath"
+        # The systemd user manager (and thus Hyprland's exec environment) must
+        # also learn the runtime path through environment.d.
+        test "$managerOmarchyPath" = "$runtime" || {
+          echo "FAIL: systemd.user.sessionVariables.OMARCHY_PATH is '$managerOmarchyPath', expected $runtime" >&2
+          exit 1
+        }
         if grep -Fq pacman "$menu_model"; then
           echo "FAIL: Quattro menu guards still query Pacman" >&2
           exit 1
