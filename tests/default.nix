@@ -950,12 +950,19 @@ in
             exit 1
           }
           # Hyprland binds and uwsm launches run without shell session
-          # variables, so every public command must default OMARCHY_PATH to
-          # its own runtime tree instead of failing "OMARCHY_PATH is not set".
-          grep -Fq "OMARCHY_PATH=\''${OMARCHY_PATH-'$runtime'}" "$public_runtime/bin/$command" || {
-            echo "FAIL: public Quattro command $command does not default OMARCHY_PATH to $runtime" >&2
+          # variables, and a compositor started before an upgrade still
+          # carries the previous generation's path. Every public command must
+          # therefore force OMARCHY_PATH to its own runtime tree: a default
+          # would let that stale value win and point Quickshell IPC at a
+          # shell instance that no longer exists.
+          grep -Fqx "export OMARCHY_PATH='$runtime'" "$public_runtime/bin/$command" || {
+            echo "FAIL: public Quattro command $command does not pin OMARCHY_PATH to $runtime" >&2
             exit 1
           }
+          if grep -Fq 'OMARCHY_PATH-' "$public_runtime/bin/$command"; then
+            echo "FAIL: public Quattro command $command lets an inherited OMARCHY_PATH override its runtime" >&2
+            exit 1
+          fi
         done < "$expectedPublicRuntimeCommandsPath"
         # The systemd user manager (and thus Hyprland's exec environment) must
         # also learn the runtime path through environment.d.
