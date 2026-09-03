@@ -163,7 +163,8 @@ index 0e61b0d..2e302c1 100644
 --- a/shell/services/AppLibrary.qml
 +++ b/shell/services/AppLibrary.qml
 @@ -85,12 +85,6 @@ Scope {
-     Util.execDetached("uwsm-app -- gtk-launch " + Util.shellQuote(id + ".desktop"))
+-    Util.execDetached("uwsm-app -- gtk-launch " + Util.shellQuote(id + ".desktop"))
++    Util.execDetached("uwsm-app -- " + Util.shellQuote("@gtkLaunch@") + " " + Util.shellQuote(id + ".desktop"))
    }
 -
 +

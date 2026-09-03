@@ -941,11 +941,16 @@ in
           *${pkgs.xdg-utils}/bin*) ;;
           *) echo "FAIL: omarchy-shell PATH omits xdg-utils" >&2; exit 1 ;;
         esac
-        shell_path="''${omarchyShellPath#PATH=}"
-        PATH="$shell_path" command -v gtk-launch >/dev/null || {
-          echo "FAIL: omarchy-shell PATH omits gtk-launch required by AppLibrary" >&2
+        gtk_launch=${pkgs.lib.getExe' pkgs.gtk3 "gtk-launch"}
+        test -x "$gtk_launch"
+        grep -Fq "Util.shellQuote(\"$gtk_launch\")" "$app_library" || {
+          echo "FAIL: Quattro AppLibrary does not pass gtk-launch to UWSM by absolute path" >&2
           exit 1
         }
+        if grep -Fq 'uwsm-app -- gtk-launch ' "$app_library"; then
+          echo "FAIL: Quattro AppLibrary leaves gtk-launch resolution to the UWSM daemon PATH" >&2
+          exit 1
+        fi
         test ! -e "$runtime/bin/pacman"
         test ! -e "$runtime/bin/yay"
         test ! -e "$public_runtime/share"

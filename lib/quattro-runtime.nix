@@ -195,6 +195,8 @@ let
         cp -r ${desktopInputs.omarchy}/. "$out/"
         chmod -R u+w "$out"
         patch -d "$out" -p1 < ${../modules/home/patches/quattro-nixos-menu.patch}
+        substituteInPlace "$out/shell/services/AppLibrary.qml" \
+          --replace-fail '@gtkLaunch@' '${pkgs.lib.getExe' pkgs.gtk3 "gtk-launch"}'
         substituteInPlace "$out/shell/plugins/bar/Bar.qml" \
           --replace-fail \
             'outputText = data.text || String(raw || "").trim()' \
@@ -283,7 +285,6 @@ let
   ];
   widgetRuntimePackages = with pkgs; [
     glib
-    gtk3
     inotify-tools
     libxkbcommon
     uwsm
