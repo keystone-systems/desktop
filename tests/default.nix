@@ -75,6 +75,24 @@ let
       niri = evalNiri;
     }
   );
+  hasPipewireLimit =
+    eval: item: value:
+    lib.any (
+      limit: limit.domain == "@pipewire" && limit.item == item && limit.value == value
+    ) eval.config.security.pam.loginLimits;
+  hasPipewireRealtime =
+    eval:
+    lib.elem "testuser" eval.config.users.groups.pipewire.members
+    && hasPipewireLimit eval "rtprio" 95
+    && hasPipewireLimit eval "nice" (-19)
+    && hasPipewireLimit eval "memlock" 4194304;
+  pipewireRealtimeDisabledEnvironments = lib.attrNames (
+    lib.filterAttrs (_: eval: !hasPipewireRealtime eval) {
+      hyprland = evalHyprland;
+      gnome = evalGnome;
+      niri = evalNiri;
+    }
+  );
 
   # Every binary the templates invoke by bare name (hyprland.lua binds,
   # hypridle.conf hooks, and shell command widgets). These MUST be
@@ -1861,7 +1879,7 @@ in
         touch "$out"
       '';
 
-  # eval-hyprland: display-manager xor plus the greetd PAM contract.
+  # eval-hyprland: display-manager xor, PipeWire realtime, and greetd PAM.
   # Forcing security.pam.services.greetd.text makes this check fail loudly on
   # any nixpkgs where the session rule breaks (the login-include rework moved
   # under our feet once already); the ordering assertion pins the invariant
@@ -1873,12 +1891,18 @@ in
         nativeBuildInputs = [ pkgs.gnugrep ];
         greetd = lib.boolToString evalHyprland.config.services.greetd.enable;
         gdm = lib.boolToString evalHyprland.config.services.displayManager.gdm.enable;
+        pipewireRealtimeDisabled = lib.concatStringsSep " " pipewireRealtimeDisabledEnvironments;
         pamText = greetdPamText;
         passAsFile = [ "pamText" ];
       }
       ''
         if [ "$greetd" = "$gdm" ]; then
           echo "FAIL(eval-hyprland): expected exactly one of greetd/gdm; got greetd=$greetd gdm=$gdm" >&2
+          exit 1
+        fi
+
+        if [ -n "$pipewireRealtimeDisabled" ]; then
+          echo "FAIL(eval-hyprland): effective PipeWire realtime privileges are missing in: $pipewireRealtimeDisabled" >&2
           exit 1
         fi
 

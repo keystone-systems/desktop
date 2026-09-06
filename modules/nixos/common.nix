@@ -66,6 +66,11 @@ in
       pulse.enable = mkDefault true;
       jack.enable = mkDefault true;
     };
+    # NixOS grants direct realtime priority, negative nice levels, and the
+    # larger memlock allowance needed by JACK clients through this group.
+    # RTKit remains enabled for ordinary clients, but cannot safely mediate
+    # every foreign callback-thread implementation (notably WineASIO).
+    users.users.${cfg.user}.extraGroups = [ "pipewire" ];
 
     # Bluetooth
     hardware.bluetooth.enable = mkDefault true;
