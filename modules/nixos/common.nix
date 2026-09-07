@@ -66,6 +66,11 @@ in
       pulse.enable = mkDefault true;
       jack.enable = mkDefault true;
     };
+    services.pipewire.wireplumber.extraConfig."10-keystone-disable-alsa-midi-bridge" =
+      mkIf (!cfg.audio.alsaMidiBridge.enable)
+        {
+          "wireplumber.profiles".main."monitor.alsa-midi" = "disabled";
+        };
     # NixOS grants direct realtime priority, negative nice levels, and the
     # larger memlock allowance needed by JACK clients through this group.
     # RTKit remains enabled for ordinary clients, but cannot safely mediate

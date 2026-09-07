@@ -37,7 +37,7 @@ let
   # home-manager.sharedModules (standalone consumers carry home-manager
   # themselves; via ks.systems/os it comes from the os module set).
   mkEval =
-    environment:
+    environment: extraModule:
     nixpkgs.lib.nixosSystem {
       modules = [
         home-manager.nixosModules.home-manager
@@ -57,12 +57,16 @@ let
             inherit environment;
           };
         }
+        extraModule
       ];
     };
 
-  evalHyprland = mkEval "hyprland";
-  evalGnome = mkEval "gnome";
-  evalNiri = mkEval "niri";
+  evalHyprland = mkEval "hyprland" { };
+  evalGnome = mkEval "gnome" { };
+  evalNiri = mkEval "niri" { };
+  evalMidiBridgeDisabled = mkEval "hyprland" {
+    keystone.desktop.audio.alsaMidiBridge.enable = false;
+  };
 
   # GCR must be the SSH agent in every environment. Forcing the GNOME eval
   # matters on its own: nixpkgs' GNOME desktop-manager defines this option
@@ -1892,6 +1896,9 @@ in
         greetd = lib.boolToString evalHyprland.config.services.greetd.enable;
         gdm = lib.boolToString evalHyprland.config.services.displayManager.gdm.enable;
         pipewireRealtimeDisabled = lib.concatStringsSep " " pipewireRealtimeDisabledEnvironments;
+        alsaMidiBridgeDefaultEnabled = lib.boolToString evalHyprland.config.keystone.desktop.audio.alsaMidiBridge.enable;
+        alsaMidiBridgeOverride =
+          evalMidiBridgeDisabled.config.services.pipewire.wireplumber.extraConfig."10-keystone-disable-alsa-midi-bridge"."wireplumber.profiles".main."monitor.alsa-midi";
         pamText = greetdPamText;
         passAsFile = [ "pamText" ];
       }
@@ -1903,6 +1910,16 @@ in
 
         if [ -n "$pipewireRealtimeDisabled" ]; then
           echo "FAIL(eval-hyprland): effective PipeWire realtime privileges are missing in: $pipewireRealtimeDisabled" >&2
+          exit 1
+        fi
+
+        if [ "$alsaMidiBridgeDefaultEnabled" != true ]; then
+          echo "FAIL(eval-hyprland): ALSA MIDI bridge must remain enabled by default" >&2
+          exit 1
+        fi
+
+        if [ "$alsaMidiBridgeOverride" != disabled ]; then
+          echo "FAIL(eval-hyprland): disabling the ALSA MIDI bridge did not render the WirePlumber profile override" >&2
           exit 1
         fi
 
