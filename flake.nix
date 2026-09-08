@@ -15,12 +15,11 @@
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
-    # This flake is the single owner of the compositor pin. Tag pin (not main):
-    # hyprland main has segfaulted before, and the live fleet runs the tagged
-    # release. Consumers can override via `keystone.inputs.desktop.follows`.
-    hyprland.url = "github:hyprwm/Hyprland?ref=v0.56.0";
+    # This flake is the single owner of the compositor source. Consumers follow
+    # this Desktop instance instead of declaring or overriding Hyprland.
+    hyprland.url = "github:hyprwm/Hyprland";
     hyprpaper = {
-      url = "github:hyprwm/hyprpaper?ref=v0.8.4";
+      url = "github:hyprwm/hyprpaper";
       inputs.nixpkgs.follows = "hyprland/nixpkgs";
       inputs.systems.follows = "hyprland/systems";
       inputs.aquamarine.follows = "hyprland/aquamarine";
@@ -46,7 +45,7 @@
       flake = false;
     };
     quickshell = {
-      url = "git+https://git.outfoxxed.me/quickshell/quickshell?ref=refs/tags/v0.3.1";
+      url = "git+https://git.outfoxxed.me/quickshell/quickshell";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };
@@ -227,6 +226,7 @@
           nixpkgs
           home-manager
           hyprland
+          hyprpaper
           omarchy
           terminal
           ;

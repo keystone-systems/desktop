@@ -13,6 +13,7 @@
   nixpkgs,
   home-manager,
   hyprland,
+  hyprpaper,
   omarchy,
   terminal,
   system,
@@ -64,6 +65,17 @@ let
   evalHyprland = mkEval "hyprland" { };
   evalGnome = mkEval "gnome" { };
   evalNiri = mkEval "niri" { };
+  canonicalHyprlandPackage = hyprland.packages.${system}.hyprland;
+  canonicalHyprpaperPackage = hyprpaper.packages.${system}.hyprpaper;
+  usesCanonicalHyprlandPackage =
+    evalHyprland.config.programs.hyprland.package == canonicalHyprlandPackage;
+  usesCanonicalHyprpaperSystemPackage = lib.elem canonicalHyprpaperPackage evalHyprland.config.environment.systemPackages;
+  hyprpaperExecStart = map builtins.unsafeDiscardStringContext (
+    homeStandalone.config.systemd.user.services.hyprpaper.Service.ExecStart
+  );
+  usesCanonicalHyprpaperHomePackage =
+    hyprpaperExecStart
+    == [ (builtins.unsafeDiscardStringContext "${canonicalHyprpaperPackage}/bin/hyprpaper") ];
   evalMidiBridgeDisabled = mkEval "hyprland" {
     keystone.desktop.audio.alsaMidiBridge.enable = false;
   };
@@ -1897,6 +1909,10 @@ in
         gdm = lib.boolToString evalHyprland.config.services.displayManager.gdm.enable;
         pipewireRealtimeDisabled = lib.concatStringsSep " " pipewireRealtimeDisabledEnvironments;
         alsaMidiBridgeDefaultEnabled = lib.boolToString evalHyprland.config.keystone.desktop.audio.alsaMidiBridge.enable;
+        canonicalHyprland = lib.boolToString usesCanonicalHyprlandPackage;
+        canonicalHyprpaperSystem = lib.boolToString usesCanonicalHyprpaperSystemPackage;
+        canonicalHyprpaperHome = lib.boolToString usesCanonicalHyprpaperHomePackage;
+        hyprpaperExecStart = lib.concatStringsSep " " hyprpaperExecStart;
         alsaMidiBridgeOverride =
           evalMidiBridgeDisabled.config.services.pipewire.wireplumber.extraConfig."10-keystone-disable-alsa-midi-bridge"."wireplumber.profiles".main."monitor.alsa-midi";
         pamText = greetdPamText;
@@ -1920,6 +1936,11 @@ in
 
         if [ "$alsaMidiBridgeOverride" != disabled ]; then
           echo "FAIL(eval-hyprland): disabling the ALSA MIDI bridge did not render the WirePlumber profile override" >&2
+          exit 1
+        fi
+
+        if [ "$canonicalHyprland" != true ] || [ "$canonicalHyprpaperSystem" != true ] || [ "$canonicalHyprpaperHome" != true ]; then
+          echo "FAIL(eval-hyprland): consumers must use Desktop's canonical packages (Hyprland=$canonicalHyprland hyprpaper-system=$canonicalHyprpaperSystem hyprpaper-home=$canonicalHyprpaperHome ExecStart=$hyprpaperExecStart)" >&2
           exit 1
         fi
 
