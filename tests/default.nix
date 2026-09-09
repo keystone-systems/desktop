@@ -1187,6 +1187,7 @@ in
         ' "$shell_config" >/dev/null
         jq -e '.bar.layout.left == [{"id":"omarchy.menu"},{"id":"omarchy.workspaces"}]' "$shell_config" >/dev/null
         grep -Fq 'omarchy-shell shell toggle omarchy.menu' "$runtime/shell/plugins/menu/BarWidget.qml"
+        grep -Fq 'root.dmenuActive ? Style.space(root.dmenuWidth) : Style.space(520)' "$menu_qml"
         grep -Fq 'visible: row.hasIcon && !row.isApp' "$runtime/shell/plugins/menu/Menu.qml"
         grep -Fq 'root.appLibrary.iconSource(row.appIcon)' "$runtime/shell/plugins/menu/Menu.qml"
         jq -e '.bar.layout.center[] | select(.id == "keystone.voice" and .type == "command")' "$shell_config" >/dev/null
