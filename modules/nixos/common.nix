@@ -65,6 +65,11 @@ in
       alsa.enable = mkDefault true;
       pulse.enable = mkDefault true;
       jack.enable = mkDefault true;
+      wireplumber.extraConfig = mkIf (!cfg.camera.libcamera.enable) {
+        "51-keystone-disable-libcamera" = {
+          "wireplumber.profiles".main."monitor.libcamera" = "disabled";
+        };
+      };
     };
     # NixOS grants direct realtime priority, negative nice levels, and the
     # larger memlock allowance needed by JACK clients through this group.

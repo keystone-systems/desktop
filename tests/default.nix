@@ -63,6 +63,9 @@ let
     };
 
   evalHyprland = mkEval "hyprland" { };
+  evalHyprlandLibcameraDisabled = mkEval "hyprland" {
+    keystone.desktop.camera.libcamera.enable = false;
+  };
   evalGnome = mkEval "gnome" { };
   evalNiri = mkEval "niri" { };
   canonicalHyprlandPackage = hyprland.packages.${system}.hyprland;
@@ -105,6 +108,13 @@ let
       niri = evalNiri;
     }
   );
+  libcameraDefaultEnabled = evalHyprland.config.keystone.desktop.camera.libcamera.enable;
+  libcameraDefaultOverrideAbsent =
+    !(builtins.hasAttr "51-keystone-disable-libcamera" evalHyprland.config.services.pipewire.wireplumber.extraConfig);
+  libcameraDisabledProfile =
+    evalHyprlandLibcameraDisabled.config.services.pipewire.wireplumber.extraConfig."51-keystone-disable-libcamera"."wireplumber.profiles".main;
+  libcameraDisabledDataDirs =
+    evalHyprlandLibcameraDisabled.config.systemd.user.services.wireplumber.environment.XDG_DATA_DIRS;
 
   # Every binary the templates invoke by bare name (hyprland.lua binds,
   # hypridle.conf hooks, and shell command widgets). These MUST be
@@ -1949,6 +1959,57 @@ in
         fi
 
         echo "PASS(eval-hyprland): greetd=$greetd gdm=$gdm; pam_systemd line $sysline; login include line ''${incline:-<absent>}"
+        touch "$out"
+      '';
+
+  wireplumber-camera-profile =
+    pkgs.runCommand "wireplumber-camera-profile"
+      {
+        defaultEnabled = lib.boolToString libcameraDefaultEnabled;
+        defaultOverrideAbsent = lib.boolToString libcameraDefaultOverrideAbsent;
+        disabledProfileExact = lib.boolToString (
+          libcameraDisabledProfile == { "monitor.libcamera" = "disabled"; }
+        );
+        v4l2OverrideAbsent = lib.boolToString (!(builtins.hasAttr "monitor.v4l2" libcameraDisabledProfile));
+        wireplumberDataDirs = libcameraDisabledDataDirs;
+      }
+      ''
+        if [ "$defaultEnabled" != true ] || [ "$defaultOverrideAbsent" != true ]; then
+          echo "FAIL: libcamera must be enabled by default without a WirePlumber override" >&2
+          exit 1
+        fi
+
+        if [ "$disabledProfileExact" != true ] || [ "$v4l2OverrideAbsent" != true ]; then
+          echo "FAIL: disabling libcamera must only disable monitor.libcamera" >&2
+          exit 1
+        fi
+
+        profile=
+        oldIFS=$IFS
+        IFS=:
+        for dataDir in $wireplumberDataDirs; do
+          candidate="$dataDir/wireplumber/wireplumber.conf.d/51-keystone-disable-libcamera.conf"
+          if [ -f "$candidate" ]; then
+            profile=$candidate
+            break
+          fi
+        done
+        IFS=$oldIFS
+
+        if [ -z "$profile" ]; then
+          echo "FAIL: the disabled libcamera profile was not rendered" >&2
+          exit 1
+        fi
+        if ! grep -Fxq 'wireplumber.profiles = {"main":{"monitor.libcamera":"disabled"}}' "$profile"; then
+          echo "FAIL: unexpected rendered WirePlumber camera profile:" >&2
+          cat "$profile" >&2
+          exit 1
+        fi
+        if grep -Fq 'monitor.v4l2' "$profile"; then
+          echo "FAIL: the libcamera workaround must leave V4L2 enabled" >&2
+          exit 1
+        fi
+
         touch "$out"
       '';
 

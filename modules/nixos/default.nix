@@ -42,6 +42,16 @@ in
       '';
     };
 
+    camera.libcamera.enable = mkOption {
+      type = types.bool;
+      default = true;
+      description = ''
+        Enable WirePlumber discovery of cameras through libcamera. Set this to
+        false only on hardware where libcamera prevents WirePlumber from
+        stopping cleanly; V4L2 camera discovery remains enabled.
+      '';
+    };
+
     obs = {
       enable = mkOption {
         type = types.bool;
