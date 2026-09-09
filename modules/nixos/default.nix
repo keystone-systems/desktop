@@ -42,17 +42,6 @@ in
       '';
     };
 
-    audio.alsaMidiBridge.enable = mkOption {
-      type = types.bool;
-      default = true;
-      description = ''
-        Enable WirePlumber's ALSA sequencer bridge. Disable this for Wine
-        audio workstations that access ALSA MIDI directly; exposing the same
-        sequencer through WirePlumber can deadlock Wine during MIDI device
-        enumeration.
-      '';
-    };
-
     obs = {
       enable = mkOption {
         type = types.bool;
