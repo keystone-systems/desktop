@@ -155,6 +155,7 @@ let
     hyprctl = evalHyprland.config.programs.hyprland.package;
   };
   hypridleUnitText = evalHyprland.config.systemd.user.units."hypridle.service".text;
+  hypridleHomeService = homeStandalone.config.systemd.user.services.hypridle.Service;
   dpmsWakeText = evalHyprland.pkgs.keystone-desktop.keystone-dpms-wake.text;
   # Matching each package's real store path keeps this exact (no version
   # guessing) and keeps the comparison at eval time: only the plain command
@@ -388,7 +389,6 @@ let
     "keystone-disk-monitor"
     "keystone-ensure-paths"
     "keystone-fingerprint-menu"
-    "keystone-idle-toggle"
     "keystone-launch-walker"
     "keystone-lock"
     # Shared backend for subordinate Walker workflows. It MUST be installed
@@ -1211,6 +1211,7 @@ in
           and .["trigger.capture.screenrecord"].action == "keystone-menu screenrecord"
           and (.["trigger.toggle"] | has("action") | not)
           and .["trigger.toggle.idle-lock"].action == "keystone-menu idle-toggle"
+          and .["trigger.toggle.idle-lock"].checked == "! systemctl --user is-active --quiet hypridle.service"
           and .["trigger.toggle.nightlight"].action == "keystone-menu nightlight-toggle"
           and .["trigger.toggle.top-bar"].action == "keystone-menu bar-toggle"
           and .["style.theme"].action == "keystone-menu theme"
@@ -1306,14 +1307,34 @@ in
           keystone-wifi-menu \
           keystone-audio-menu \
           keystone-screenrecord \
-          keystone-idle-toggle \
           keystone-nightlight-toggle \
           omarchy-toggle-bar \
           omarchy-shell; do
           ln -s keystone-main-menu "$TMPDIR/fake-bin/$backend"
         done
+        cat > "$TMPDIR/fake-bin/systemctl" <<'EOF'
+        #!${pkgs.runtimeShell}
+        case "$*" in
+          "--user is-active --quiet hypridle.service")
+            test -e "$KEYSTONE_TEST_HYPRIDLE_ACTIVE"
+            ;;
+          "--user start hypridle.service")
+            : > "$KEYSTONE_TEST_HYPRIDLE_ACTIVE"
+            ;;
+          "--user stop hypridle.service")
+            rm -f -- "$KEYSTONE_TEST_HYPRIDLE_ACTIVE"
+            ;;
+          *) exit 2 ;;
+        esac
+        EOF
+        cat > "$TMPDIR/fake-bin/notify-send" <<'EOF'
+        #!${pkgs.runtimeShell}
+        exit 0
+        EOF
+        chmod +x "$TMPDIR/fake-bin/systemctl" "$TMPDIR/fake-bin/notify-send"
         invoke_menu() {
-          HOME="$TMPDIR/home" XDG_CONFIG_HOME="$TMPDIR/home/.config" PATH="$TMPDIR/fake-bin:$PATH" \
+          HOME="$TMPDIR/home" XDG_CONFIG_HOME="$TMPDIR/home/.config" \
+            KEYSTONE_TEST_HYPRIDLE_ACTIVE="$TMPDIR/hypridle-active" PATH="$TMPDIR/fake-bin:$PATH" \
             ${pkgs.bash}/bin/bash ${../modules/home/scripts/keystone-menu.sh} "$@"
         }
         test "$(invoke_menu main)" = "omarchy-menu toggle"
@@ -1328,7 +1349,11 @@ in
         test "$(invoke_menu network)" = "keystone-wifi-menu open-menu"
         test "$(invoke_menu audio)" = "keystone-audio-menu open-menu"
         test "$(invoke_menu screenrecord)" = "keystone-screenrecord"
-        test "$(invoke_menu idle-toggle)" = "keystone-idle-toggle"
+        test ! -e "$TMPDIR/hypridle-active"
+        invoke_menu idle-toggle
+        test -e "$TMPDIR/hypridle-active"
+        invoke_menu idle-toggle
+        test ! -e "$TMPDIR/hypridle-active"
         test "$(invoke_menu nightlight-toggle)" = "keystone-nightlight-toggle"
         test "$(invoke_menu bar-toggle)" = "omarchy-toggle-bar"
         test "$(invoke_menu bar-settings)" = "omarchy-shell shell summon omarchy.bar-settings {}"
@@ -1870,6 +1895,8 @@ in
       {
         hypridleEnabled = lib.boolToString evalHyprland.config.services.hypridle.enable;
         missing = lib.concatStringsSep " " missingHypridleHookBinaries;
+        restart = hypridleHomeService.Restart or "";
+        restartSec = hypridleHomeService.RestartSec or "";
       }
       ''
         if [ "$hypridleEnabled" != "true" ]; then
@@ -1878,6 +1905,14 @@ in
         fi
         if [ -n "$missing" ]; then
           echo "FAIL: rendered hypridle unit PATH is missing hook commands: $missing" >&2
+          exit 1
+        fi
+        if [ "$restart" != on-failure ]; then
+          echo "FAIL: hypridle does not restart after an unexpected failure" >&2
+          exit 1
+        fi
+        if [ "$restartSec" != 1s ]; then
+          echo "FAIL: hypridle restart policy lacks its bounded retry delay" >&2
           exit 1
         fi
         touch "$out"

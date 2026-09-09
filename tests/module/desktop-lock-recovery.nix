@@ -420,6 +420,12 @@ pkgs.runCommand "test-desktop-lock-recovery"
       grep -q '^  lock_cmd=keystone-lock$' "$hypridle_conf"
     check "hypridle must use an ordinary lock before sleep" \
       grep -q '^  before_sleep_cmd=keystone-lock$' "$hypridle_conf"
+    check "hypridle must ignore ScreenSaver D-Bus inhibitors" \
+      grep -q '^  ignore_dbus_inhibit=true$' "$hypridle_conf"
+    check "hypridle must ignore logind idle inhibitors" \
+      grep -q '^  ignore_systemd_inhibit=true$' "$hypridle_conf"
+    check "both idle listeners must ignore Wayland inhibitors" \
+      test "$(grep -c '^  ignore_inhibit=true$' "$hypridle_conf")" -eq 2
     if grep -q -- '--fail-closed' "$hypridle_conf"; then
       fail "runtime hypridle hooks must never terminate the visible session"
     fi
@@ -436,6 +442,9 @@ pkgs.runCommand "test-desktop-lock-recovery"
     fi
     check "the lid must use the suspend policy helper" \
       grep -q 'keystone-suspend --lid' "$hyprland_conf"
+    if grep -q 'keystone-idle-toggle' "$hyprland_conf"; then
+      fail "Stay Awake must only be exposed through the system menu"
+    fi
     check "Hyprland must accept a supervised replacement lock client" \
       grep -q 'allow_session_lock_restore = true' "$hyprland_conf"
     menu_arm lock | grep -q 'keystone_cmd keystone-lock' \

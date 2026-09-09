@@ -185,6 +185,8 @@ in
       };
       Service = {
         ExecStart = "${pkgs.hypridle}/bin/hypridle";
+        Restart = "on-failure";
+        RestartSec = "1s";
         # hypridle runs every listener command through /bin/sh, so the command
         # resolves against THIS unit's PATH. The systemd user manager gives a
         # closed PATH that holds only the session packages — `environment.

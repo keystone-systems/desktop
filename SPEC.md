@@ -279,7 +279,6 @@ user's own dotfiles copy) — not in Nix options.
 | `Shift+Print` | Screenshot to clipboard |
 | `$mod+Ctrl+V` | Clipboard history       |
 | `$mod+Ctrl+E` | Emoji picker            |
-| `$mod+Ctrl+I` | Toggle idle inhibitor   |
 | `$mod+Ctrl+N` | Toggle nightlight       |
 
 ## Nix Options

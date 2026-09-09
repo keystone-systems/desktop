@@ -21,7 +21,7 @@
   "trigger.capture.screenshot": {"icon":"","label":"Screenshot","description":"Capture, annotate, or copy a region","action":"keystone-menu screenshot"},
   "trigger.capture.screenrecord": {"icon":"","label":"Screen recording","checked":"pgrep -f '(^|/)gpu-screen-recorder([[:space:]]|$)' >/dev/null","action":"keystone-menu screenrecord"},
   "trigger.toggle": {"icon":"󰔎","label":"Toggles","aliases":["toggle","toggles"]},
-  "trigger.toggle.idle-lock": {"icon":"󰅶","label":"Stay Awake","checked":"! pgrep -x hypridle >/dev/null","action":"keystone-menu idle-toggle"},
+  "trigger.toggle.idle-lock": {"icon":"󰅶","label":"Stay Awake","checked":"! systemctl --user is-active --quiet hypridle.service","action":"keystone-menu idle-toggle"},
   "trigger.toggle.nightlight": {"icon":"󰔎","label":"Nightlight","action":"keystone-menu nightlight-toggle"},
   "trigger.toggle.top-bar": {"icon":"󰍜","label":"Menu Bar","checked":"[[ ! -e ${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/toggles/bar-off ]]","action":"keystone-menu bar-toggle"},
 
