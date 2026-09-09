@@ -65,6 +65,15 @@ index 90a35c0..bde5ebd 100644
    // Bound to the central [menu] section in shell.toml via Color.qml.
    // Each color already includes its alpha companion (composed in the
    // singleton), so consumers can drop them straight into a Rectangle.
+@@ -108,7 +105,7 @@ Scope {
+   property int dividerHeight: Style.space(17)
+   property bool searchDivider: false
+   property int layoutSerial: 0
+-  property int cardWidth: Math.min(root.dmenuActive ? Style.space(root.dmenuWidth) : ((root.activeMenu === "trigger.capture.screenrecord" || root.activeMenu === "style.font") ? Style.space(520) : Style.space(300)), panel.width - Style.gapsOut * 2)
++  property int cardWidth: Math.min(root.dmenuActive ? Style.space(root.dmenuWidth) : Style.space(520), panel.width - Style.gapsOut * 2)
+   property int visibleRowsHeight: root.dmenuActive ? dmenuRowListHeight(layoutSerial, displayModel.count, filterText) : rowListHeight(layoutSerial, displayModel.count, filterText, searchDivider)
+   property int cardHeight: root.dmenuActive
+     ? Math.min(contentMargin * 2 + headerHeight + (mode === "input" ? 0 : contentSpacing + visibleRowsHeight), panel.height - Style.gapsOut * 2)
 @@ -757,7 +754,6 @@ Scope {
    }
 -
