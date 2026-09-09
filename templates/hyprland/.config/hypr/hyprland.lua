@@ -128,7 +128,6 @@ bind(mod .. " + CTRL + SHIFT + N", hl.dsp.exec_cmd("makoctl mode -t do-not-distu
 bind("Print", hl.dsp.exec_cmd(app .. "keystone-screenshot"))
 bind("SHIFT + Print", hl.dsp.exec_cmd(app .. "keystone-screenshot smart clipboard"))
 bind(mod .. " + Print", hl.dsp.exec_cmd(app .. "hyprpicker -a"))
-bind(mod .. " + CTRL + I", hl.dsp.exec_cmd("keystone-idle-toggle"))
 bind(mod .. " + CTRL + N", hl.dsp.exec_cmd("keystone-nightlight-toggle"))
 
 local repeat_locked = { locked = true, repeating = true }

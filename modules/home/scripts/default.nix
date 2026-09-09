@@ -144,17 +144,6 @@ let
       --custom-icon "$next_sink_volume_icon"
   '';
 
-  # Idle toggle script
-  keystoneIdleToggle = pkgs.writeShellScriptBin "keystone-idle-toggle" ''
-    if ${pkgs.procps}/bin/pgrep -x hypridle > /dev/null; then
-      ${pkgs.procps}/bin/pkill -x hypridle
-      ${pkgs.libnotify}/bin/notify-send "󰅶  Idle inhibitor enabled" "Screen will not lock automatically"
-    else
-      setsid ${pkgs.uwsm}/bin/uwsm app -- ${pkgs.hypridle}/bin/hypridle &
-      ${pkgs.libnotify}/bin/notify-send "󰾪  Idle inhibitor disabled" "Screen will lock after timeout"
-    fi
-  '';
-
   # Nightlight toggle script
   keystoneNightlightToggle = pkgs.writeShellScriptBin "keystone-nightlight-toggle" ''
     ON_TEMP=4000
@@ -649,7 +638,6 @@ in
           home.packages = [
             keystoneScreenrecord
             keystoneAudioSwitch
-            keystoneIdleToggle
             keystoneNightlightToggle
             keystoneBatteryMonitor
             keystoneDiskMonitor

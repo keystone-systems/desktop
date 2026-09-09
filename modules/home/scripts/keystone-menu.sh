@@ -100,7 +100,13 @@ case "${1:-main}" in
     exec "$(keystone_cmd keystone-screenrecord)"
     ;;
   idle-toggle)
-    exec "$(keystone_cmd keystone-idle-toggle)"
+    if systemctl --user is-active --quiet hypridle.service; then
+      systemctl --user stop hypridle.service
+      notify-send "󰅶  Stay Awake on" "Automatic lock and display sleep are disabled until the next login"
+    else
+      systemctl --user start hypridle.service
+      notify-send "󰾪  Stay Awake off" "Automatic lock and display sleep are enabled"
+    fi
     ;;
   nightlight-toggle)
     exec "$(keystone_cmd keystone-nightlight-toggle)"
