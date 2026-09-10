@@ -1,5 +1,6 @@
 {
   config,
+  desktopInputs,
   lib,
   pkgs,
   ...
@@ -168,6 +169,16 @@ in
     keystone.terminal = {
       enable = mkDefault true;
       ssh.authSock = mkDefault "%t/gcr/ssh";
+      dotfiles = {
+        bootstrap.template =
+          desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.dotfile-templates;
+        packages = mkAfter [
+          "hyprland"
+          "omarchy"
+          "walker"
+          "wofi"
+        ];
+      };
     };
 
     assertions = [

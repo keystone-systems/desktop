@@ -156,6 +156,7 @@
           pkgs.runCommand "keystone-dotfile-templates" { } ''
             mkdir -p $out
             cp -r ${terminal.packages.${system}.dotfile-templates}/. $out/
+            chmod -R u+w $out
             cp -r ${./templates}/. $out/
           '';
 
