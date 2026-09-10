@@ -312,7 +312,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         "x": 0,
         "y": 0,
         "mirrorOf": "none",
-        "disabled": false,
+        "disabled": true,
         "availableModes": ["1920x1080@60.00Hz"]
       },
       {
@@ -326,7 +326,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         "x": 300,
         "y": 200,
         "mirrorOf": "none",
-        "disabled": false,
+        "disabled": true,
         "availableModes": ["2560x1440@60.00Hz"]
       }
     ]
@@ -334,7 +334,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         cat > "$fake_bin/hyprctl" <<'SH'
     #!${pkgs.bash}/bin/bash
     set -euo pipefail
-    if [[ "$1" == "-j" && "$2" == "monitors" && "$3" == "all" ]]; then
+    if [[ "$1" == "-j" && "$2" == "monitors" && "''${3:-}" == "all" ]]; then
       if [[ -e "$HYPRCTL_APPLIED" && -n "''${HYPRCTL_AFTER_FIXTURE:-}" ]]; then
         cat "$HYPRCTL_AFTER_FIXTURE"
       elif [[ "''${MONITOR_DISABLED:-0}" == "1" ]]; then
@@ -343,6 +343,20 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         jq 'map(if .name == "DP-1" then .mirrorOf = "eDP-1" else . end)' "$MONITORS_FIXTURE"
       else
         cat "$MONITORS_FIXTURE"
+      fi
+      exit 0
+    fi
+    if [[ "$1" == "-j" && "$2" == "monitors" && "''${3:-}" == "" ]]; then
+      if [[ -e "$HYPRCTL_APPLIED" && -n "''${HYPRCTL_AFTER_FIXTURE:-}" ]]; then
+        active_fixture="$HYPRCTL_AFTER_FIXTURE"
+      else
+        active_fixture="$MONITORS_FIXTURE"
+      fi
+
+      if [[ "''${MONITOR_DISABLED:-0}" == "1" ]]; then
+        jq '[.[] | select(.name != "eDP-1")]' "$active_fixture"
+      else
+        cat "$active_fixture"
       fi
       exit 0
     fi
@@ -364,8 +378,9 @@ pkgs.runCommand "test-desktop-hyprland-lua"
     printf '%s\n' "$*" >> "$NOTIFY_RECORD"
     SH
         chmod +x "$fake_bin/hyprctl" "$fake_bin/notify-send"
+        ln -s "$monitor_menu" "$fake_bin/keystone-monitor-menu"
 
-        run_monitor_action() {
+        run_monitor_menu() {
           env \
             PATH="$fake_bin:$PATH" \
             MONITORS_FIXTURE="''${HYPRCTL_BEFORE_FIXTURE:-$monitors_fixture}" \
@@ -373,8 +388,24 @@ pkgs.runCommand "test-desktop-hyprland-lua"
             HYPRCTL_APPLIED="$hyprctl_applied" \
             NOTIFY_RECORD="$notify_record" \
             XDG_RUNTIME_DIR="$runtime_dir" \
-            bash "$monitor_menu" dispatch "$1"
+            bash "$monitor_menu" "$@"
         }
+
+        run_monitor_action() {
+          run_monitor_menu dispatch "$1"
+        }
+
+        # Hyprland 0.56 can report disabled=true for active outputs. The menu
+        # must classify state from membership in `monitors`, not that field.
+        active_actions="$(run_monitor_menu monitor-actions-json eDP-1)"
+        jq -e '.[] | select(.Text == "Temporary: Disable monitor")' <<<"$active_actions" >/dev/null \
+          || fail "active monitor was not offered the disable action"
+        if jq -e '.[] | select(.Text == "Temporary: Enable monitor")' <<<"$active_actions" >/dev/null; then
+          fail "active monitor was incorrectly offered the enable action"
+        fi
+        disabled_actions="$(MONITOR_DISABLED=1 run_monitor_menu monitor-actions-json eDP-1)"
+        jq -e '.[] | select(.Text == "Temporary: Enable monitor")' <<<"$disabled_actions" >/dev/null \
+          || fail "disabled monitor was not offered the enable action"
 
         : > "$notify_record"
         run_monitor_action $'apply-scale\teDP-1\t2'
