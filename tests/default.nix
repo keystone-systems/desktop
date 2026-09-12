@@ -2312,4 +2312,12 @@ in
       ;
   };
   desktop-uwsm-migration = import ./module/desktop-uwsm-migration.nix { inherit pkgs; };
+  template-dotfiles-twin = import ./template-dotfiles-twin.nix {
+    inherit
+      self
+      nixpkgs
+      home-manager
+      system
+      ;
+  };
 }

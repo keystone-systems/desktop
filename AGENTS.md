@@ -8,9 +8,11 @@ terminal themes without this product.
 Nix owns **binaries, session
 wiring (greetd/uwsm/PAM/pipewire/portals), scripts/menus, and theming
 activation**; runtime configuration (hyprland.lua, Quattro, wofi, walker
-config, themes) is owned by the **user's dotfiles**, seeded once from
-`templates/` via `nix run .#seed-dotfiles`. Do not reintroduce Nix-side
-settings generation (`wayland.windowManager.hyprland.settings`,
+config, themes) is owned by the **user's dotfiles**. Home Manager automatically
+bootstraps a missing checkout from `templates/`; an existing checkout is
+never seeded or overwritten. `seed-dotfiles` remains an explicit maintenance
+tool. Do not reintroduce Nix-side settings generation
+(`wayland.windowManager.hyprland.settings`,
 `programs.hyprlock`, `services.hypridle.settings`, …) —
 that tree was verified dead in production and deliberately deleted during the
 extraction. Config changes go to `templates/` (and the user's own dotfiles);

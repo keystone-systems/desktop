@@ -8,9 +8,9 @@ host can consume the terminal product without this repository.
 **Division of labor**: Nix owns binaries, session wiring
 (greetd/uwsm/PAM/pipewire/portals), scripts/menus, and the templates
 themselves. Runtime configuration — `hyprland.lua`, Quattro, wofi, walker
-config, themes — lives in **your dotfiles repo**, seeded once from
-`templates/` and yours thereafter. Nix never generates or overwrites your
-editable config.
+config, themes — lives in **your dotfiles repo**. Home Manager bootstraps a
+missing checkout from the pinned templates, and it is yours thereafter. Nix
+never overwrites an existing checkout or your editable config.
 
 This flake owns the Hyprland compositor pin (currently v0.56.0) and the
 matching hyprpaper pin — consumers get a coherent compositor/tooling set
@@ -63,16 +63,22 @@ are null (the standalone default).
 `nixosModules.default` (which dispatches on `keystone.desktop.environment`)
 is the supported entry point.
 
-## Seeding your dotfiles
+## Activating your dotfiles
 
-The templates are a **starter set you copy once** into your own dotfiles repo
-(stow-package layout, as used by [GNU Stow](https://www.gnu.org/software/stow/)):
+Set this in the user's Home Manager configuration:
 
-```sh
-nix run git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/desktop.git#seed-dotfiles -- ~/repos/<me>/dotfiles/packages
-cd ~/repos/<me>/dotfiles
-stow -d packages -t ~ hyprland omarchy wofi walker themes
+```nix
+keystone.terminal.dotfiles.enable = true;
 ```
+
+That option is the complete first-boot action. If the configured `repoPath`
+does not exist, Home Manager copies the exact release-pinned Terminal and
+Desktop templates into a writable checkout, initializes a local Git
+repository, and stows it. If the path already exists, Home Manager treats it
+as the user's own dotfiles, does not seed or overwrite it, and only validates
+and restows the selected packages. Set
+`keystone.terminal.dotfiles.bootstrap.enable = false` to require an
+externally managed checkout to exist before activation.
 
 First-time Hyprland consumers MUST include the `omarchy` Stow package. It
 owns the editable `~/.config/omarchy/shell.json` that selects Keystone's
@@ -86,10 +92,10 @@ or the power key opens its System route. The bar button drives the same QML
 state. Walker remains installed for subordinate workflows that require
 Elephant providers, previews, dmenu input, or secure text entry.
 
-`seed-dotfiles` skips files that already exist; pass `--force` to overwrite.
-After seeding, the files are yours — edit them freely, commit them to your
-dotfiles repo, and never re-seed unless you want upstream's latest starter
-state.
+The `seed-dotfiles` package remains available as an explicit maintenance
+tool. It skips files that already exist; pass `--force` to overwrite. Normal
+users do not need to invoke it. After automatic bootstrap, the files are
+yours — edit and commit them freely.
 
 `ks.systems/terminal` owns the four terminal adapters and the
 `keystone-theme-switch` command. This product appends graphical adapter
