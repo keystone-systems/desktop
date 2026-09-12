@@ -62,7 +62,28 @@ blocked_entry_json() {
 }
 
 monitors_json_raw() {
-  hyprctl -j monitors all 2>/dev/null || printf '[]\n'
+  local connected active
+
+  if ! connected=$(hyprctl -j monitors all 2>/dev/null); then
+    printf '[]\n'
+    return 0
+  fi
+  if ! active=$(hyprctl -j monitors 2>/dev/null); then
+    printf '[]\n'
+    return 0
+  fi
+
+  # Hyprland 0.56 reports `disabled: true` even for active monitors. Derive
+  # the state from the command contract instead: `monitors` lists active
+  # outputs, while `monitors all` also includes connected disabled outputs.
+  jq -n --argjson connected "$connected" --argjson active "$active" '
+    ($active | map(.name)) as $active_names
+    | $connected
+    | map(. as $monitor
+        | $monitor + {
+            keystoneEnabled: (($active_names | index($monitor.name)) != null)
+          })
+  '
 }
 
 monitors_json() {
@@ -159,7 +180,7 @@ stable_monitor_id() {
 
 is_disabled() {
   local monitor_name="$1"
-  [[ "$(require_monitor_json "$monitor_name" | jq -r '.disabled // false')" == "true" ]]
+  [[ "$(require_monitor_json "$monitor_name" | jq -r '.keystoneEnabled // false')" != "true" ]]
 }
 
 transform_label() {
@@ -493,7 +514,7 @@ monitor_rules_lua() {
     build_monitor_rule "$stable_name" "$mode" "$position" "$scale" "$transform" "$mirror_target"
   done < <(
     monitors_json \
-      | jq -r '[.[] | select((.disabled // false) | not)] | sort_by((.name | startswith("eDP-") | not), .name) | .[].name'
+      | jq -r '[.[] | select(.keystoneEnabled // false)] | sort_by((.name | startswith("eDP-") | not), .name) | .[].name'
   )
 }
 
@@ -548,7 +569,7 @@ cmd_monitors_json() {
       ]
     else
       $data
-      | sort_by([((.focused // false) | not), (.disabled // false), .name])
+      | sort_by([((.focused // false) | not), ((.keystoneEnabled // false) | not), .name])
       | map({
           Text: (
             (if .focused then "󰍹  " else "󰍺  " end)
@@ -558,7 +579,7 @@ cmd_monitors_json() {
             [
               (.description // (.make + " " + .model)),
               (
-                if (.disabled // false) then
+                if ((.keystoneEnabled // false) | not) then
                   "disabled"
                 else
                   "\(.width)x\(.height) @ \(.refreshRate | tonumber | . * 100 | round / 100)Hz"
@@ -577,7 +598,7 @@ cmd_monitors_json() {
             | join(" · ")
           ),
           Value: .name,
-          Icon: (if (.disabled // false) then "video-display-off-symbolic" else "video-display-symbolic" end),
+          Icon: (if (.keystoneEnabled // false) then "video-display-symbolic" else "video-display-off-symbolic" end),
           SubMenu: "keystone-monitor-actions",
           Preview: ($monitor_menu + " preview-monitor " + (.name | @sh)),
           PreviewType: "command"
@@ -727,7 +748,7 @@ cmd_monitor_values_json() {
         [
           $data[]
           | select(.name != $monitor)
-          | select((.disabled // false) | not)
+          | select(.keystoneEnabled // false)
           | [
               {
                 Text: "Mirror " + .name,
@@ -778,7 +799,7 @@ cmd_preview_monitor() {
         "Monitor: \(.name)",
         "",
         ("Description: " + (.description // ((.make // "") + " " + (.model // "")))),
-        ("Mode: " + (if (.disabled // false) then "disabled" else "\(.width)x\(.height) @ \(.refreshRate | tonumber | . * 100 | round / 100)Hz" end)),
+        ("Mode: " + (if (.keystoneEnabled // false) then "\(.width)x\(.height) @ \(.refreshRate | tonumber | . * 100 | round / 100)Hz" else "disabled" end)),
         ("Scale: " + ((.scale // 1) | tostring)),
         ("Orientation: " + (.transform | tostring)),
         (
