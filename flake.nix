@@ -11,7 +11,7 @@
     };
 
     terminal = {
-      url = "git+ssh://forgejo@git.ncrmro.com:2222/ks.systems/terminal.git";
+      url = "github:keystone-systems/terminal/v0.13.0-rc.1";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 
