@@ -167,9 +167,6 @@ end
 
 window_rule("chromium-tile", { class = "^(chromium)$" }, { tile = true })
 window_rule("settings-float", { class = "^(org.pulseaudio.pavucontrol|.blueman-manager-wrapped|blueman-manager)$" }, { float = true })
--- Ableton's XWayland client keeps its D3D swapchain at the desktop extent.
--- Tiling it to a smaller leaf causes DXVK to recreate the swapchain forever.
-window_rule("ableton-float", { class = "^(ableton live 12 suite[.]exe)$" }, { float = true })
 window_rule("default-opacity", { class = ".*" }, { opacity = "0.97 0.9" })
 window_rule("youtube-opacity", { class = "^(chromium|google-chrome|google-chrome-unstable)$", title = ".*Youtube.*" }, { opacity = "1 1" })
 window_rule("browser-opacity", { class = "^(chromium|google-chrome|google-chrome-unstable)$" }, { opacity = "1 0.97" })
