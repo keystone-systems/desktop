@@ -238,6 +238,8 @@ pkgs.runCommand "test-desktop-hyprland-lua"
           || fail "Shift+F11 must preserve layout-aware fullscreen"
         grep -Fq 'bind("ALT + F11", hl.dsp.window.fullscreen({ mode = "maximized" }))' "$main" \
           || fail "Alt+F11 must preserve layout-aware maximization"
+        grep -Fq 'window_rule("ableton-float", { class = "^(ableton live 12 suite[.]exe)$" }, { float = true })' "$main" \
+          || fail "Ableton XWayland windows must float to avoid a DXVK resize loop"
         if grep -E 'F11.*layout_aware = false' "$main"; then
           fail "F11 binds must retain Hyprland 0.56 layout-aware defaults"
         fi
