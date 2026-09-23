@@ -58,7 +58,6 @@ themes/
 │   ├── shell.toml          # Quattro shell palette
 │   ├── colors.toml         # Semantic palette input
 │   ├── ghostty.conf        # Terminal emulator styling
-│   ├── chromium.theme      # Browser color
 │   ├── icons.theme         # Icon theme name
 │   └── backgrounds/        # Wallpaper candidates
 └── nord/

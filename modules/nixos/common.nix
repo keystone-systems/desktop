@@ -146,9 +146,6 @@ in
         ## Video Player
         mpv
 
-        # Browser
-        chromium
-
         # File management
         nautilus
         file-roller

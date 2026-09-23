@@ -245,7 +245,7 @@ pkgs.runCommand "test-desktop-hyprland-lua"
         grep -q 'hl.dispatch(hl.dsp.dpms' "$main" || fail "DPMS wake must dispatch inside the callback"
         grep -q 'timeout = 500, type = "oneshot"' "$main" || fail "DPMS wake timer contract changed"
 
-        for command in ghostty chromium nautilus walker \
+        for command in ghostty xdg-open nautilus walker \
           keystone-menu-keybindings keystone-screenshot hyprpicker; do
           grep -E "app \\.\\. .*''${command}" "$main" >/dev/null \
             || fail "graphical launcher $command must run through uwsm app --"

@@ -37,12 +37,6 @@ in
       '';
     };
 
-    browser = mkOption {
-      type = types.str;
-      default = "chromium";
-      description = "Default browser binary name. Used by the $mod+B keybinding.";
-    };
-
     health = {
       battery = {
         warningPercent = mkOption {

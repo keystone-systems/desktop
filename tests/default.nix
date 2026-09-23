@@ -134,6 +134,7 @@ let
     "satty"
     "brightnessctl"
     "playerctl"
+    "xdg-utils"
     "wl-clip-persist"
     "clipse"
     "keystone-dpms-wake"
@@ -441,7 +442,6 @@ let
     keystone.desktop = {
       enable = true;
       environment = "hyprland";
-      browser = "chromium";
       uhk.enable = true;
       photos.enable = true;
       agents.enable = true;

@@ -152,7 +152,6 @@ in
       "swayosd.css"
       "walker.css"
       "hyprlock.conf"
-      "chromium.theme"
       "ghostty.conf"
       "icons.theme"
       "backgrounds"
