@@ -16,6 +16,15 @@ let
   hyprlandPkg = desktopInputs.hyprland.packages.${pkgs.stdenv.hostPlatform.system}.hyprland;
   hyprpolkitagentPkg =
     desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.hyprpolkitagent;
+  powerLog = pkgs.writeTextFile {
+    name = "keystone-hyprland-power-log";
+    executable = true;
+    destination = "/bin/keystone-hyprland-power-log";
+    text = ''
+      #!${pkgs.python3}/bin/python3
+      ${builtins.readFile ./scripts/keystone-hyprland-power-log.py}
+    '';
+  };
   graphicalService = description: execStart: {
     Unit = {
       Description = description;
@@ -219,6 +228,32 @@ in
         Requisite = [ "graphical-session.target" ];
       };
       Service.ExecStart = "${hyprpaperPkg}/bin/hyprpaper";
+      Install.WantedBy = [ "graphical-session.target" ];
+    };
+
+    systemd.user.services.keystone-hyprland-power-log = mkIf cfg.powerDebug.enable {
+      Unit = {
+        Description = "Preserve existing Hyprland compositor logs";
+        PartOf = [ "graphical-session.target" ];
+        After = [
+          "graphical-session.target"
+          "wayland-session-waitenv.service"
+        ];
+        Requisite = [ "graphical-session.target" ];
+        StartLimitIntervalSec = "5min";
+        StartLimitBurst = 3;
+      };
+      Service = {
+        ExecStart = "${powerLog}/bin/keystone-hyprland-power-log";
+        SyslogIdentifier = "keystone-hyprland-power-log";
+        Nice = 10;
+        CPUQuota = "5%";
+        MemoryMax = "64M";
+        LogRateLimitIntervalSec = "30s";
+        LogRateLimitBurst = 500;
+        Restart = "on-failure";
+        RestartSec = "30s";
+      };
       Install.WantedBy = [ "graphical-session.target" ];
     };
 

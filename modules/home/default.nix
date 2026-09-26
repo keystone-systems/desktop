@@ -23,6 +23,10 @@ in
   options.keystone.desktop = {
     enable = mkEnableOption "Keystone Desktop - Core desktop packages and utilities for Home Manager";
 
+    powerDebug.enable = mkEnableOption ''
+      journal capture of existing Hyprland compositor logs for power debugging
+    '';
+
     environment = mkOption {
       type = types.enum [
         "hyprland"

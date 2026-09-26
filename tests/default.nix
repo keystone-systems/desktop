@@ -258,6 +258,19 @@ let
     keystone.terminal.git.enable = false;
     keystone.desktop.enable = true;
   };
+  homePowerDebug = mkHomeConfig {
+    keystone.terminal.git.enable = false;
+    keystone.desktop.enable = true;
+    keystone.desktop.powerDebug.enable = true;
+  };
+  homePowerDebugGnome = mkHomeConfig {
+    keystone.terminal.git.enable = false;
+    keystone.desktop = {
+      enable = true;
+      environment = "gnome";
+      powerDebug.enable = true;
+    };
+  };
   homeSshAgentEnabled = homeStandalone.config.services.ssh-agent.enable;
   homeSshAuthSock = homeStandalone.config.keystone.terminal.ssh.authSock;
   generatedUwsmEnv = homeStandalone.config.xdg.configFile."uwsm/env".source;
@@ -2288,6 +2301,12 @@ in
 
   desktop-walker-surfaces = import ./module/desktop-walker-surfaces.nix { inherit pkgs; };
   desktop-health-monitor = import ./module/desktop-health-monitor.nix { inherit pkgs; };
+  desktop-power-debug-log = import ./module/desktop-power-debug-log.nix {
+    inherit pkgs lib;
+    disabled = homeStandalone.config;
+    enabled = homePowerDebug.config;
+    gnome = homePowerDebugGnome.config;
+  };
   desktop-lock-recovery = import ./module/desktop-lock-recovery.nix { inherit pkgs; };
   desktop-hyprland-lua = import ./module/desktop-hyprland-lua.nix {
     inherit pkgs hyprland system;

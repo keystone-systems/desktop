@@ -136,6 +136,17 @@ UWSM reads `.config/uwsm/env` for the common session environment and
 use `uwsm app --`. Home Manager owns persistent background processes as
 services that require and start after `graphical-session.target`.
 
+For power diagnostics, set `keystone.desktop.powerDebug.enable = true` in the
+Home Manager configuration. The optional `keystone-hyprland-power-log` user
+service follows the current instance's existing
+`$XDG_RUNTIME_DIR/hypr/$HYPRLAND_INSTANCE_SIGNATURE/hyprland.log` and forwards
+bounded records to the journal. Query them with
+`journalctl --user -t keystone-hyprland-power-log` (add `-b` for this boot or
+`-f` to follow). Persistent journal storage and retention are OS policy. This
+captures only messages Hyprland already emits; it does not increase compositor
+log verbosity or recover messages from before the service began beyond the
+last 1 MiB of a still-present log file.
+
 `hl.on("hyprland.start", ...)` MAY perform compositor-local dispatch or
 configuration work. It MUST NOT launch GUI applications or long-lived
 processes before the lock gate.
