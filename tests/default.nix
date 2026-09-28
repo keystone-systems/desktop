@@ -565,6 +565,11 @@ let
   );
 in
 {
+  desktop-timezone = import ./module/desktop-timezone.nix {
+    inherit pkgs lib;
+    disabled = evalHyprland.config;
+    enabled = (mkEval "hyprland" { services.automatic-timezoned.enable = true; }).config;
+  };
   # No personal literal may survive the template scrub: absolute home paths,
   # the upstream author's identity, hardware serials, or personal modules.
   template-lint =

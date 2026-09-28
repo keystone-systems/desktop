@@ -16,6 +16,7 @@ in
   # imports). Each per-DE module below self-gates on cfg.environment.
   imports = [
     ./common.nix
+    ./timezone.nix
     ./hyprland.nix
     ./gnome.nix
     ./niri.nix
