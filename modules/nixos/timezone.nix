@@ -14,10 +14,8 @@ let
       pkgs.gnugrep
       pkgs.systemd
     ];
-    text = builtins.readFile (
-      pkgs.replaceVars ./scripts/timezone-apply.sh {
-        overrideFile = lib.escapeShellArg overrideFile;
-      }
+    text = builtins.replaceStrings [ "@overrideFile@" ] [ (lib.escapeShellArg overrideFile) ] (
+      builtins.readFile ./scripts/timezone-apply.sh
     );
   };
   menu = pkgs.writeShellApplication {
@@ -29,12 +27,11 @@ let
       pkgs.polkit
       pkgs.libnotify
     ];
-    text = builtins.readFile (
-      pkgs.replaceVars ./scripts/timezone-menu.sh {
-        overrideFile = lib.escapeShellArg overrideFile;
-        applyCommand = lib.escapeShellArg "${apply}/bin/keystone-timezone-apply";
-      }
-    );
+    text =
+      builtins.replaceStrings
+        [ "@overrideFile@" "@applyCommand@" ]
+        [ (lib.escapeShellArg overrideFile) (lib.escapeShellArg "${apply}/bin/keystone-timezone-apply") ]
+        (builtins.readFile ./scripts/timezone-menu.sh);
   };
 in
 {

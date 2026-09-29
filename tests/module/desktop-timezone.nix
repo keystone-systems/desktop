@@ -7,6 +7,12 @@
 assert !disabled.keystone.desktop.timezone.enable;
 assert !(disabled.systemd.services ? keystone-timezone-override);
 assert enabled.keystone.desktop.timezone.enable;
+# Force both generated applications during evaluation, not only their options.
+assert builtins.isString
+  enabled.systemd.services.keystone-timezone-override.serviceConfig.ExecStart;
+assert lib.any (
+  package: package.name == "keystone-timezone-menu" && builtins.isString package.drvPath
+) enabled.environment.systemPackages;
 assert
   enabled.keystone.desktop.timezone.overrideFile
   == "/home/testuser/.config/omarchy/timezone-override";
