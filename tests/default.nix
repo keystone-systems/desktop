@@ -570,11 +570,7 @@ let
   remoteDesktopDefaultsToTailscale =
     homeRemoteDesktop.config.keystone.desktop.remoteDesktop.bindAddress == null;
   remoteDesktopUserManager = evalHyprlandRemoteDesktop.config.systemd.services."user@";
-  remoteDesktopRetries =
-    remoteDesktopUnit.Service.Restart == "on-failure"
-    && remoteDesktopUnit.Service.RestartSec == "5s"
-    && remoteDesktopUnit.Service.TimeoutStopSec == "10s"
-    && remoteDesktopUnit.Unit.StartLimitIntervalSec == 0;
+  remoteDesktopDoesNotRetry = !(remoteDesktopUnit.Service ? Restart);
   remoteDesktopPrimaryUserEnabled =
     evalHyprlandRemoteDesktop.config.home-manager.users.testuser.keystone.desktop.remoteDesktop.enable;
   remoteDesktopSecondaryUserDisabled =
@@ -1043,7 +1039,7 @@ in
         defaultOff = lib.boolToString remoteDesktopDefaultOff;
         packageInstalled = lib.boolToString remoteDesktopPackageInstalled;
         defaultsToTailscale = lib.boolToString remoteDesktopDefaultsToTailscale;
-        retries = lib.boolToString remoteDesktopRetries;
+        doesNotRetry = lib.boolToString remoteDesktopDoesNotRetry;
         requiresTailscale = lib.boolToString remoteDesktopRequiresTailscale;
         primaryUserEnabled = lib.boolToString remoteDesktopPrimaryUserEnabled;
         secondaryUserDisabled = lib.boolToString remoteDesktopSecondaryUserDisabled;
@@ -1063,7 +1059,7 @@ in
         test "$defaultOff" = true
         test "$packageInstalled" = true
         test "$defaultsToTailscale" = true
-        test "$retries" = true
+        test "$doesNotRetry" = true
         test "$requiresTailscale" = true
         test "$primaryUserEnabled" = true
         test "$secondaryUserDisabled" = true
@@ -1078,7 +1074,7 @@ in
         test "$userManagerWants" = tailscaled.service
 
         grep -Fq -- '/bin/tailscale" ip -4' "$unitExecStart"
-        grep -Fq -- '/bin/tailscale" wait --timeout=0s' "$unitExecStart"
+        ! grep -Fq -- '/bin/tailscale" wait' "$unitExecStart"
         grep -Fq -- '--bind "$bind"' "$unitExecStart"
         grep -Fq -- 'startswith("hypr-rdp")' "$unitExecStart"
         grep -Fq -- '--output "$output"' "$unitExecStart"
