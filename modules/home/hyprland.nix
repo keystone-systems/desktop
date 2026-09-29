@@ -35,8 +35,8 @@ let
         )
       }
       if [[ -z "$bind_address" ]]; then
-        if ! "${lib.getExe pkgs.tailscale}" wait --timeout=30s; then
-          echo "keystone-hypr-rdp: Tailscale did not become ready within 30 seconds" >&2
+        if ! "${lib.getExe pkgs.tailscale}" wait --timeout=0s; then
+          echo "keystone-hypr-rdp: Tailscale readiness wait failed" >&2
           exit 1
         fi
         if ! bind_address="$("${lib.getExe pkgs.tailscale}" ip -4 2>/dev/null)"; then
@@ -324,7 +324,11 @@ in
 
     systemd.user.services.keystone-hypr-rdp = mkIf cfg.remoteDesktop.enable (
       lib.recursiveUpdate (graphicalService "Hyprland RDP server" (lib.getExe remoteDesktopCommand)) {
+        Unit.StartLimitIntervalSec = 0;
         Service = {
+          Restart = "on-failure";
+          RestartSec = "5s";
+          TimeoutStopSec = "10s";
           UMask = "0077";
         };
       }
