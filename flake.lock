@@ -395,6 +395,26 @@
         "type": "github"
       }
     },
+    "hypr-rdp": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1788936535,
+        "narHash": "sha256-VCB7Pd9M9avZ/yHgzXH3U8LwRdt9AdJ3GHUhl+sCdhY=",
+        "owner": "MuNeNICK",
+        "repo": "hypr-rdp",
+        "rev": "e419dc47a6c0605199cbfb2501d71e0ead015c4a",
+        "type": "github"
+      },
+      "original": {
+        "owner": "MuNeNICK",
+        "repo": "hypr-rdp",
+        "type": "github"
+      }
+    },
     "hyprcursor": {
       "inputs": {
         "hyprlang": [
@@ -982,6 +1002,7 @@
     "root": {
       "inputs": {
         "home-manager": "home-manager",
+        "hypr-rdp": "hypr-rdp",
         "hyprland": "hyprland",
         "hyprpaper": "hyprpaper",
         "nix-flatpak": "nix-flatpak",

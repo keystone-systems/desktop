@@ -323,6 +323,33 @@ capslock remap) is now template content — edit your dotfiles instead.
 
 ## Security and Power Hook Execution
 
+### Remote Desktop
+
+- Remote desktop support MUST default off.
+- When enabled for Hyprland, the service MUST start after the locked graphical
+  session is ready and MUST stop with that session.
+- The default capture target MUST be an existing active output that hypr-rdp
+  did not create. The service MUST NOT create a headless output unless a future
+  explicit option requests one.
+- The listener MUST default to the host's runtime Tailscale IPv4 address and
+  MUST fail closed when no such address is available. A non-loopback listener
+  without both a username and runtime password file MUST emit an evaluation
+  warning.
+- The NixOS option MUST order `user@.service` after `tailscaled.service`, which
+  also makes the user manager stop before Tailscale. The RDP user service MUST
+  NOT claim a cross-manager dependency that systemd cannot enforce.
+- The NixOS listener and credential policy MUST be projected authoritatively
+  only to the selected primary desktop user.
+- Automatic binding MUST make one bounded readiness wait before address
+  discovery so normal daemon startup does not cause a permanent race failure.
+- A failed RDP start MUST NOT retry automatically.
+- Username and password-file authentication MUST be configured together. A
+  password MUST NOT be embedded in Nix text or copied into the Nix store.
+- The Home Manager module MUST NOT open a NixOS firewall port. Network exposure
+  remains an explicit host-policy decision.
+- The service MUST use the desktop flake's pinned package and Hyprland client
+  so its graphical runtime and compositor IPC remain version-aligned.
+
 Desktop hooks run in systemd user services. They do not inherit the login
 shell environment. Nix MUST define the executable environment for these
 hooks.

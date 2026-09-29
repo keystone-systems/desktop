@@ -14,6 +14,7 @@
   home-manager,
   hyprland,
   hyprpaper,
+  hypr-rdp,
   omarchy,
   terminal,
   system,
@@ -65,6 +66,34 @@ let
   evalHyprland = mkEval "hyprland" { };
   evalHyprlandLibcameraDisabled = mkEval "hyprland" {
     keystone.desktop.camera.libcamera.enable = false;
+  };
+  evalHyprlandRemoteDesktop = mkEval "hyprland" {
+    services.tailscale.enable = true;
+    users.users.otheruser.isNormalUser = true;
+    home-manager.users.testuser = {
+      home.stateVersion = "25.05";
+      keystone.desktop.enable = true;
+    };
+    home-manager.users.otheruser = {
+      home.stateVersion = "25.05";
+      keystone.desktop.enable = true;
+    };
+    keystone.desktop.remoteDesktop = {
+      enable = true;
+      username = "alice";
+      passwordFile = "/run/secrets/hypr-rdp-password";
+    };
+  };
+  evalHyprlandRemoteDesktopWithoutTailscale = mkEval "hyprland" {
+    home-manager.users.testuser = {
+      home.stateVersion = "25.05";
+      keystone.desktop.enable = true;
+    };
+    keystone.desktop.remoteDesktop = {
+      enable = true;
+      username = "alice";
+      passwordFile = "/run/secrets/hypr-rdp-password";
+    };
   };
   evalGnome = mkEval "gnome" { };
   evalNiri = mkEval "niri" { };
@@ -477,6 +506,86 @@ let
   configuredOmarchyShellEnvironment =
     homeFull.config.systemd.user.services.omarchy-shell.Service.Environment;
   renderServiceValue = value: if builtins.isList value then lib.concatStringsSep " " value else value;
+  homeRemoteDesktop = mkHomeConfig {
+    keystone.terminal.git.enable = false;
+    keystone.desktop = {
+      enable = true;
+      remoteDesktop = {
+        enable = true;
+        username = "alice";
+        passwordFile = "/run/secrets/hypr-rdp-password";
+      };
+    };
+  };
+  homeRemoteDesktopSecure = mkHomeConfig {
+    keystone.terminal.git.enable = false;
+    keystone.desktop = {
+      enable = true;
+      remoteDesktop = {
+        enable = true;
+        bindAddress = "100.64.0.3";
+        output = "DP-1";
+        username = "alice";
+        passwordFile = "/run/secrets/hypr-rdp-password";
+      };
+    };
+  };
+  homeRemoteDesktopInvalidAuth = mkUncheckedHomeConfig {
+    keystone.desktop = {
+      enable = true;
+      remoteDesktop = {
+        enable = true;
+        username = "alice";
+      };
+    };
+  };
+  homeRemoteDesktopStorePassword = mkUncheckedHomeConfig {
+    keystone.desktop = {
+      enable = true;
+      remoteDesktop = {
+        enable = true;
+        username = "alice";
+        passwordFile = "${pkgs.writeText "hypr-rdp-test-password" "not-a-secret"}";
+      };
+    };
+  };
+  homeRemoteDesktopEmptyBind = builtins.tryEval (
+    (mkHomeConfig {
+      keystone.desktop = {
+        enable = true;
+        remoteDesktop = {
+          enable = true;
+          bindAddress = "";
+        };
+      };
+    }).activationPackage.drvPath
+  );
+  remoteDesktopUnit = homeRemoteDesktop.config.systemd.user.services.keystone-hypr-rdp;
+  remoteDesktopSecureUnit = homeRemoteDesktopSecure.config.systemd.user.services.keystone-hypr-rdp;
+  remoteDesktopPackage = hypr-rdp.packages.${system}.hypr-rdp;
+  remoteDesktopDefaultOff =
+    !(builtins.hasAttr "keystone-hypr-rdp" homeStandalone.config.systemd.user.services)
+    && !(lib.elem remoteDesktopPackage homeStandalone.config.home.packages);
+  remoteDesktopPackageInstalled = lib.elem remoteDesktopPackage homeRemoteDesktop.config.home.packages;
+  remoteDesktopDefaultsToTailscale =
+    homeRemoteDesktop.config.keystone.desktop.remoteDesktop.bindAddress == null;
+  remoteDesktopUserManager = evalHyprlandRemoteDesktop.config.systemd.services."user@";
+  remoteDesktopDoesNotRetry = !(remoteDesktopUnit.Service ? Restart);
+  remoteDesktopPrimaryUserEnabled =
+    evalHyprlandRemoteDesktop.config.home-manager.users.testuser.keystone.desktop.remoteDesktop.enable;
+  remoteDesktopSecondaryUserDisabled =
+    !evalHyprlandRemoteDesktop.config.home-manager.users.otheruser.keystone.desktop.remoteDesktop.enable;
+  remoteDesktopRequiresTailscale = lib.any (
+    assertion: !assertion.assertion && lib.hasInfix "Tailscale must be enabled" assertion.message
+  ) evalHyprlandRemoteDesktopWithoutTailscale.config.assertions;
+  remoteDesktopPartialAuthRejected = lib.any (
+    assertion:
+    !assertion.assertion && lib.hasInfix "remoteDesktop.username and passwordFile" assertion.message
+  ) homeRemoteDesktopInvalidAuth.config.assertions;
+  remoteDesktopStorePasswordRejected = lib.any (
+    assertion: !assertion.assertion && lib.hasInfix "outside the Nix store" assertion.message
+  ) homeRemoteDesktopStorePassword.config.assertions;
+  remoteDesktopEmptyBindRejected = !homeRemoteDesktopEmptyBind.success;
   configuredDefaultServiceErrors = lib.filter (error: error != null) (
     lib.mapAttrsToList (
       name: unit:
@@ -921,6 +1030,62 @@ in
           *virtio*) ;;
           *) echo "FAIL: hyprsunset lost its virtio exclusion" >&2; exit 1 ;;
         esac
+        touch "$out"
+      '';
+
+  remote-desktop-contract =
+    pkgs.runCommand "remote-desktop-contract"
+      {
+        defaultOff = lib.boolToString remoteDesktopDefaultOff;
+        packageInstalled = lib.boolToString remoteDesktopPackageInstalled;
+        defaultsToTailscale = lib.boolToString remoteDesktopDefaultsToTailscale;
+        doesNotRetry = lib.boolToString remoteDesktopDoesNotRetry;
+        requiresTailscale = lib.boolToString remoteDesktopRequiresTailscale;
+        primaryUserEnabled = lib.boolToString remoteDesktopPrimaryUserEnabled;
+        secondaryUserDisabled = lib.boolToString remoteDesktopSecondaryUserDisabled;
+        partialAuthRejected = lib.boolToString remoteDesktopPartialAuthRejected;
+        storePasswordRejected = lib.boolToString remoteDesktopStorePasswordRejected;
+        emptyBindRejected = lib.boolToString remoteDesktopEmptyBindRejected;
+        unitAfter = lib.concatStringsSep " " remoteDesktopUnit.Unit.After;
+        unitPartOf = lib.concatStringsSep " " remoteDesktopUnit.Unit.PartOf;
+        unitRequisite = lib.concatStringsSep " " remoteDesktopUnit.Unit.Requisite;
+        unitWantedBy = lib.concatStringsSep " " remoteDesktopUnit.Install.WantedBy;
+        userManagerAfter = lib.concatStringsSep " " remoteDesktopUserManager.after;
+        userManagerWants = lib.concatStringsSep " " remoteDesktopUserManager.wants;
+        unitExecStart = renderServiceValue remoteDesktopUnit.Service.ExecStart;
+        secureUnitExecStart = renderServiceValue remoteDesktopSecureUnit.Service.ExecStart;
+      }
+      ''
+        test "$defaultOff" = true
+        test "$packageInstalled" = true
+        test "$defaultsToTailscale" = true
+        test "$doesNotRetry" = true
+        test "$requiresTailscale" = true
+        test "$primaryUserEnabled" = true
+        test "$secondaryUserDisabled" = true
+        test "$partialAuthRejected" = true
+        test "$storePasswordRejected" = true
+        test "$emptyBindRejected" = true
+        test "$unitAfter" = graphical-session.target
+        test "$unitPartOf" = graphical-session.target
+        test "$unitRequisite" = graphical-session.target
+        test "$unitWantedBy" = graphical-session.target
+        test "$userManagerAfter" = tailscaled.service
+        test "$userManagerWants" = tailscaled.service
+
+        grep -Fq -- '/bin/tailscale" ip -4' "$unitExecStart"
+        grep -Fq -- '/bin/tailscale" wait --timeout=30s' "$unitExecStart"
+        grep -Fq -- '--bind "$bind"' "$unitExecStart"
+        grep -Fq -- 'startswith("hypr-rdp")' "$unitExecStart"
+        grep -Fq -- '--output "$output"' "$unitExecStart"
+        grep -Fq -- '--username alice' "$unitExecStart"
+        grep -Fq -- '--password-file /run/secrets/hypr-rdp-password' "$unitExecStart"
+
+        grep -Fq -- 'bind_address=100.64.0.3' "$secureUnitExecStart"
+        grep -Fq -- 'bind="$bind_address:3389"' "$secureUnitExecStart"
+        grep -Fq -- 'output=DP-1' "$secureUnitExecStart"
+        grep -Fq -- '--username alice' "$secureUnitExecStart"
+        grep -Fq -- '--password-file /run/secrets/hypr-rdp-password' "$secureUnitExecStart"
         touch "$out"
       '';
 

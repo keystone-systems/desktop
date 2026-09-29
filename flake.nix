@@ -31,6 +31,13 @@
       inputs.hyprwire.follows = "hyprland/hyprwire";
     };
 
+    hypr-rdp = {
+      url = "github:MuNeNICK/hypr-rdp";
+      # Keep libva and the rest of the graphical runtime aligned with the
+      # desktop package set instead of mixing libraries from two nixpkgs pins.
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
+
     walker = {
       url = "github:abenz1267/walker";
       inputs.nixpkgs.follows = "nixpkgs";
@@ -58,6 +65,7 @@
       terminal,
       hyprland,
       hyprpaper,
+      hypr-rdp,
       walker,
       nix-flatpak,
       omarchy,
@@ -76,6 +84,7 @@
         inherit
           hyprland
           hyprpaper
+          hypr-rdp
           omarchy
           quickshell
           ;
@@ -228,6 +237,7 @@
           home-manager
           hyprland
           hyprpaper
+          hypr-rdp
           omarchy
           terminal
           ;

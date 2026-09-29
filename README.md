@@ -63,6 +63,53 @@ are null (the standalone default).
 `nixosModules.default` (which dispatches on `keystone.desktop.environment`)
 is the supported entry point.
 
+## Remote desktop
+
+Hyprland desktops can opt into a native RDP server:
+
+```nix
+keystone.desktop.remoteDesktop.enable = true;
+```
+
+The option defaults off. When enabled, `keystone-hypr-rdp.service` starts only
+after the locked graphical session is ready. It captures the first active
+Hyprland output that it did not create itself, rather than creating a separate
+headless desktop. Set `keystone.desktop.remoteDesktop.output` when a
+multi-monitor host needs an explicit connector such as `DP-1`.
+
+The listener discovers and binds the host's Tailscale IPv4 address on port
+3389 by default. On NixOS, configure this option at the NixOS level as shown;
+Keystone passes it authoritatively to the selected primary desktop user's Home
+Manager configuration and orders `user@.service` after
+`tailscaled.service`. Systemd reverses that edge at shutdown, stopping the RDP
+user service before Tailscale. Configure credentials before enabling it:
+
+```nix
+keystone.desktop.remoteDesktop = {
+  enable = true;
+  username = "alice";
+  passwordFile = "/run/secrets/hypr-rdp-password";
+};
+```
+
+`passwordFile` MUST point to a runtime secret and MUST NOT be produced with
+Nix text, because Nix store contents are readable by local users. A
+non-loopback listener without credentials allows any client that can reach the
+port to view and control the active desktop; the module emits an evaluation
+warning for that configuration. This Home Manager option does not open the
+NixOS firewall. Expose port 3389 only on the intended private interface.
+
+Set `bindAddress = "127.0.0.1"` to opt out of Tailscale discovery and require
+an SSH tunnel. An explicit address also overrides Tailscale discovery.
+Automatic Tailscale binding requires `services.tailscale.enable = true`. If
+Tailscale does not become ready within 30 seconds or address discovery fails,
+the service fails closed and does not retry.
+
+Advanced encoder, audio, resolution, and session-hook settings remain in the
+user-owned `~/.config/hypr-rdp/config.toml`. Keystone's command-line wiring
+always owns the bind address, captured output, and authentication arguments so
+mutable configuration cannot silently override those security boundaries.
+
 ## Activating your dotfiles
 
 Set this in the user's Home Manager configuration:
