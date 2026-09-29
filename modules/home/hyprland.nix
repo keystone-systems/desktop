@@ -25,6 +25,62 @@ let
       ${builtins.readFile ./scripts/keystone-hyprland-power-log.py}
     '';
   };
+  hyprRdpPkg = desktopInputs.hypr-rdp.packages.${pkgs.stdenv.hostPlatform.system}.hypr-rdp;
+  remoteDesktopCommand = pkgs.writeShellApplication {
+    name = "keystone-hypr-rdp";
+    text = ''
+      bind_address=${
+        lib.escapeShellArg (
+          if cfg.remoteDesktop.bindAddress == null then "" else cfg.remoteDesktop.bindAddress
+        )
+      }
+      if [[ -z "$bind_address" ]]; then
+        if ! "${lib.getExe pkgs.tailscale}" wait --timeout=30s; then
+          echo "keystone-hypr-rdp: Tailscale did not become ready within 30 seconds" >&2
+          exit 1
+        fi
+        if ! bind_address="$("${lib.getExe pkgs.tailscale}" ip -4 2>/dev/null)"; then
+          echo "keystone-hypr-rdp: could not discover a Tailscale IPv4 address" >&2
+          exit 1
+        fi
+      fi
+      if [[ -z "$bind_address" ]]; then
+        echo "keystone-hypr-rdp: Tailscale has no IPv4 address" >&2
+        exit 1
+      fi
+      if [[ "$bind_address" == *:* ]]; then
+        bind="[$bind_address]:${toString cfg.remoteDesktop.port}"
+      else
+        bind="$bind_address:${toString cfg.remoteDesktop.port}"
+      fi
+
+      output=${
+        lib.escapeShellArg (if cfg.remoteDesktop.output == null then "" else cfg.remoteDesktop.output)
+      }
+      if [[ -z "$output" ]]; then
+        output="$("${lib.getExe' hyprlandPkg "hyprctl"}" monitors -j \
+          | "${lib.getExe pkgs.jq}" -er \
+            '[.[] | select(.name | startswith("hypr-rdp") | not)][0].name // empty')"
+      fi
+      if [[ -z "$output" ]]; then
+        echo "keystone-hypr-rdp: no existing active Hyprland output found" >&2
+        exit 1
+      fi
+
+      command=(
+        "${lib.getExe hyprRdpPkg}"
+        --bind "$bind"
+        --output "$output"
+      )
+      ${lib.optionalString (cfg.remoteDesktop.username != null) ''
+        command+=(
+          --username ${lib.escapeShellArg cfg.remoteDesktop.username}
+          --password-file ${lib.escapeShellArg cfg.remoteDesktop.passwordFile}
+        )
+      ''}
+      exec "''${command[@]}"
+    '';
+  };
   graphicalService = description: execStart: {
     Unit = {
       Description = description;
@@ -65,7 +121,7 @@ in
   # stowed dotfiles (seed with `nix run .#seed-dotfiles`). Nix owns the
   # binaries (OS-level) and these hand-written user units.
   config = mkIf (cfg.enable && cfg.environment == "hyprland") {
-    home.packages = [ keystoneLockPkg ];
+    home.packages = [ keystoneLockPkg ] ++ lib.optional cfg.remoteDesktop.enable hyprRdpPkg;
 
     # Generic session invariants are immutable runtime wiring. UWSM inherits
     # profile PATH and XDG_DATA_DIRS from the user manager; reconstructing
@@ -265,6 +321,14 @@ in
         };
 
     systemd.user.services.hyprpolkitagent = graphicalService "Hyprland polkit authentication agent" "${hyprpolkitagentPkg}/libexec/hyprpolkitagent";
+
+    systemd.user.services.keystone-hypr-rdp = mkIf cfg.remoteDesktop.enable (
+      lib.recursiveUpdate (graphicalService "Hyprland RDP server" (lib.getExe remoteDesktopCommand)) {
+        Service = {
+          UMask = "0077";
+        };
+      }
+    );
 
   };
 }

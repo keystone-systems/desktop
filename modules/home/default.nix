@@ -109,6 +109,8 @@ in
       };
     };
 
+    remoteDesktop = import ../remote-desktop-options.nix { inherit lib; };
+
     # Optional Quattro QML catalog surfaces. The shell service receives static
     # KEYSTONE_MENU_SHOW_* capability flags; guarded rows never point at a
     # command omitted from the Home Manager profile.
@@ -201,7 +203,54 @@ in
         assertion = !config.keystone.terminal.sshAutoLoad.enable;
         message = "A Keystone desktop cannot enable keystone.terminal.sshAutoLoad; GCR is the only SSH agent for desktop users.";
       }
+      {
+        assertion = (cfg.remoteDesktop.username == null) == (cfg.remoteDesktop.passwordFile == null);
+        message = "keystone.desktop.remoteDesktop.username and passwordFile must be set together";
+      }
+      {
+        assertion = !cfg.remoteDesktop.enable || cfg.environment == "hyprland";
+        message = "keystone.desktop.remoteDesktop requires keystone.desktop.environment = \"hyprland\"";
+      }
+      {
+        assertion =
+          cfg.remoteDesktop.passwordFile == null || lib.hasPrefix "/" cfg.remoteDesktop.passwordFile;
+        message = "keystone.desktop.remoteDesktop.passwordFile must be null or an absolute path";
+      }
+      {
+        assertion =
+          cfg.remoteDesktop.passwordFile == null
+          || (
+            !builtins.hasContext cfg.remoteDesktop.passwordFile
+            && !lib.hasPrefix "${builtins.storeDir}/" cfg.remoteDesktop.passwordFile
+          );
+        message = "keystone.desktop.remoteDesktop.passwordFile must be a runtime path outside the Nix store and must not carry Nix string context";
+      }
     ];
+
+    warnings =
+      lib.optional
+        (
+          cfg.remoteDesktop.enable
+          && cfg.remoteDesktop.username == null
+          && (
+            cfg.remoteDesktop.bindAddress == null
+            || !lib.elem cfg.remoteDesktop.bindAddress [
+              "127.0.0.1"
+              "::1"
+            ]
+          )
+        )
+        ''
+          keystone.desktop.remoteDesktop is reachable beyond loopback without RDP
+          credentials. Any client that can reach ${
+            if cfg.remoteDesktop.bindAddress == null then
+              "the runtime Tailscale IPv4 address"
+            else
+              cfg.remoteDesktop.bindAddress
+          }:${toString cfg.remoteDesktop.port}
+          can view and control the active desktop. Configure username and
+          passwordFile, or bind to loopback and use an SSH tunnel.
+        '';
 
     # A terminal-only host may use Home Manager's OpenSSH agent. Desktops use
     # GCR exclusively so GNOME Keyring is the only passphrase store.

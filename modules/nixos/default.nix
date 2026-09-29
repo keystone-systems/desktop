@@ -9,6 +9,7 @@
 with lib;
 let
   cfg = config.keystone.desktop;
+  tailscaleRemoteDesktop = cfg.remoteDesktop.enable && cfg.remoteDesktop.bindAddress == null;
 in
 {
   # nix-flatpak is imported via flake.nix nixosModules.default (hoisted to
@@ -42,6 +43,8 @@ in
         experience; "gnome" and "niri" are minimal stubs.
       '';
     };
+
+    remoteDesktop = import ../remote-desktop-options.nix { inherit lib; };
 
     camera.libcamera.enable = mkOption {
       type = types.bool;
@@ -91,5 +94,27 @@ in
     home-manager.sharedModules = [
       { keystone.desktop.environment = lib.mkDefault cfg.environment; }
     ];
+
+    # The NixOS policy is authoritative and belongs only to the primary
+    # desktop user. sharedModules would broadcast the listener and credential
+    # path to every Home Manager user on a multi-user host.
+    home-manager.users = lib.mkIf cfg.remoteDesktop.enable {
+      ${cfg.user}.keystone.desktop.remoteDesktop = cfg.remoteDesktop;
+    };
+
+    assertions = lib.optional tailscaleRemoteDesktop {
+      assertion = config.services.tailscale.enable;
+      message = "Tailscale must be enabled when keystone.desktop.remoteDesktop uses automatic Tailscale binding";
+    };
+
+    # This system-manager edge is deliberately attached to the user manager,
+    # not to the RDP user unit: user units cannot order themselves against a
+    # system unit. After= starts the manager after tailscaled and reverses at
+    # shutdown, so every graphical user service, including hypr-rdp, is gone
+    # before tailscaled stops. Wants= puts both units in the startup transaction.
+    systemd.services."user@" = mkIf tailscaleRemoteDesktop {
+      wants = [ "tailscaled.service" ];
+      after = [ "tailscaled.service" ];
+    };
   };
 }
