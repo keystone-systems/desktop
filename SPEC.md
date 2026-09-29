@@ -340,12 +340,12 @@ capslock remap) is now template content — edit your dotfiles instead.
   NOT claim a cross-manager dependency that systemd cannot enforce.
 - The NixOS listener and credential policy MUST be projected authoritatively
   only to the selected primary desktop user.
-- Automatic binding MUST wait for the Tailscale interface and address without
-  a startup deadline; slow network startup MUST NOT leave RDP permanently failed.
-- Failed starts MUST retry with a five-second delay while the graphical session
-  remains active. Explicit stops and session teardown MUST NOT trigger retries.
+- Automatic binding MUST read the Tailscale IPv4 address once after normal
+  service ordering, without a readiness wait or retry loop. An unavailable
+  address MUST fail only the RDP service, not block the desktop session.
+- Failed starts MUST NOT retry automatically.
 - Shutdown MUST stop the user manager before tailscaled. RDP MUST terminate its
-  whole process group within ten seconds, including a pending readiness wait.
+  process group within five seconds, without a shutdown readiness guard.
 - Username and password-file authentication MUST be configured together. A
   password MUST NOT be embedded in Nix text or copied into the Nix store.
 - The Home Manager module MUST NOT open a NixOS firewall port. Network exposure

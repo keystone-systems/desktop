@@ -102,12 +102,12 @@ NixOS firewall. Expose port 3389 only on the intended private interface.
 Set `bindAddress = "127.0.0.1"` to opt out of Tailscale discovery and require
 an SSH tunnel. An explicit address also overrides Tailscale discovery.
 Automatic Tailscale binding requires `services.tailscale.enable = true`.
-The RDP launcher waits until the Tailscale interface and address are ready,
-without a boot-time deadline. It never falls back to another address. Failed
-launches retry after five seconds while the graphical session remains active.
 NixOS orders the user manager after `tailscaled.service`; shutdown reverses
-that order, stopping the user services before Tailscale. The RDP process group
-has a ten-second stop timeout, including while waiting for Tailscale.
+that order, stopping user services before Tailscale. The launcher reads the
+Tailscale IPv4 address once and starts RDP. It has no readiness wait or retry
+loop, and never falls back to another address. A missing address fails only
+RDP, without preventing the desktop session from starting. Normal shutdown
+sends SIGTERM to the RDP process group, with a five-second stop limit.
 
 Advanced encoder, audio, resolution, and session-hook settings remain in the
 user-owned `~/.config/hypr-rdp/config.toml`. Keystone's command-line wiring
