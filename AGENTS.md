@@ -156,3 +156,17 @@ Bindings live in the template `hyprland.lua`, not in Nix.
 input block — the physical Alt key (thumb-accessible) triggers `$mod`
 (`SUPER`) bindings, while physical Super + arrows send Alt + arrows for
 browser back/forward. `ctrl:nocaps` remaps Caps Lock to Control.
+
+## Tailscale service ordering
+
+Tailnet listeners MUST bind only their configured Tailscale address. Prefer
+native nonblocking support for binding before the interface is ready when the
+service supports it. Otherwise use normal systemd ordering: `After=` plus
+`Wants=tailscaled.service` starts after the daemon and stops before it.
+User units cannot order against system units; express any cross-manager edge
+in the NixOS system-manager configuration.
+
+Do not add readiness polling, sleeps, retry/restart loops, or startup/shutdown
+wait guards to hide ordering races. Network readiness MUST NOT block boot,
+login, or shutdown. Daemon startup ordering is not proof that an address is
+assigned; verify the service's binding behavior without a wildcard fallback.
