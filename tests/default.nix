@@ -570,7 +570,11 @@ let
   remoteDesktopDefaultsToTailscale =
     homeRemoteDesktop.config.keystone.desktop.remoteDesktop.bindAddress == null;
   remoteDesktopUserManager = evalHyprlandRemoteDesktop.config.systemd.services."user@";
-  remoteDesktopDoesNotRetry = !(remoteDesktopUnit.Service ? Restart);
+  remoteDesktopRetries =
+    remoteDesktopUnit.Service.Restart == "on-failure"
+    && remoteDesktopUnit.Service.RestartSec == "5s"
+    && remoteDesktopUnit.Service.TimeoutStopSec == "10s"
+    && remoteDesktopUnit.Unit.StartLimitIntervalSec == 0;
   remoteDesktopPrimaryUserEnabled =
     evalHyprlandRemoteDesktop.config.home-manager.users.testuser.keystone.desktop.remoteDesktop.enable;
   remoteDesktopSecondaryUserDisabled =
@@ -1039,7 +1043,7 @@ in
         defaultOff = lib.boolToString remoteDesktopDefaultOff;
         packageInstalled = lib.boolToString remoteDesktopPackageInstalled;
         defaultsToTailscale = lib.boolToString remoteDesktopDefaultsToTailscale;
-        doesNotRetry = lib.boolToString remoteDesktopDoesNotRetry;
+        retries = lib.boolToString remoteDesktopRetries;
         requiresTailscale = lib.boolToString remoteDesktopRequiresTailscale;
         primaryUserEnabled = lib.boolToString remoteDesktopPrimaryUserEnabled;
         secondaryUserDisabled = lib.boolToString remoteDesktopSecondaryUserDisabled;
@@ -1059,7 +1063,7 @@ in
         test "$defaultOff" = true
         test "$packageInstalled" = true
         test "$defaultsToTailscale" = true
-        test "$doesNotRetry" = true
+        test "$retries" = true
         test "$requiresTailscale" = true
         test "$primaryUserEnabled" = true
         test "$secondaryUserDisabled" = true
@@ -1074,7 +1078,7 @@ in
         test "$userManagerWants" = tailscaled.service
 
         grep -Fq -- '/bin/tailscale" ip -4' "$unitExecStart"
-        grep -Fq -- '/bin/tailscale" wait --timeout=30s' "$unitExecStart"
+        grep -Fq -- '/bin/tailscale" wait --timeout=0s' "$unitExecStart"
         grep -Fq -- '--bind "$bind"' "$unitExecStart"
         grep -Fq -- 'startswith("hypr-rdp")' "$unitExecStart"
         grep -Fq -- '--output "$output"' "$unitExecStart"
@@ -1086,6 +1090,7 @@ in
         grep -Fq -- 'output=DP-1' "$secureUnitExecStart"
         grep -Fq -- '--username alice' "$secureUnitExecStart"
         grep -Fq -- '--password-file /run/secrets/hypr-rdp-password' "$secureUnitExecStart"
+        ${pkgs.python3}/bin/python3 ${./remote-desktop-startup.py} "$unitExecStart"
         touch "$out"
       '';
 
