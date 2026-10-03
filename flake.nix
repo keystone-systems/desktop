@@ -11,7 +11,7 @@
     };
 
     terminal = {
-      url = "github:keystone-systems/terminal/v0.13.0-rc.1";
+      url = "github:keystone-systems/terminal/52e88f381131d357c5c4c715ecdf81cee143b541";
       inputs.nixpkgs.follows = "nixpkgs";
     };
 

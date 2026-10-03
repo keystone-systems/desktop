@@ -1142,17 +1142,17 @@
         "nixpkgs-x86-darwin": "nixpkgs-x86-darwin"
       },
       "locked": {
-        "lastModified": 1789231285,
-        "narHash": "sha256-lGAzZyfNbR3iAvAX2VVRGiOQ2VTD2yfJoF0L1fX1Lrg=",
+        "lastModified": 1791006222,
+        "narHash": "sha256-YqghSEn/pdOA1vj/HPLsQzlmvb4ZlSmJ/81njUUx4F4=",
         "owner": "keystone-systems",
         "repo": "terminal",
-        "rev": "1a3602557610231ae5e13baa227c6c22121b0e25",
+        "rev": "52e88f381131d357c5c4c715ecdf81cee143b541",
         "type": "github"
       },
       "original": {
         "owner": "keystone-systems",
-        "ref": "v0.13.0-rc.1",
         "repo": "terminal",
+        "rev": "52e88f381131d357c5c4c715ecdf81cee143b541",
         "type": "github"
       }
     },
