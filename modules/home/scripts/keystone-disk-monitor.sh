@@ -57,6 +57,8 @@ while read -r percentage_used available_bytes total_bytes mount_path; do
     echo "keystone-disk-monitor: invalid filesystem usage: $percentage_used $mount_path" >&2
     exit 1
   fi
+  # Read-only snapshot mounts are restore points, not writable capacity.
+  [[ "$mount_path" == */.zfs/snapshot/* ]] && continue
   [[ -n "${seen[$mount_path]:-}" ]] && continue
   seen[$mount_path]=1
   available_human="$(numfmt --to=iec-i --suffix=B "$available_bytes")"

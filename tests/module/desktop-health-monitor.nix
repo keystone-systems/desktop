@@ -24,6 +24,7 @@ pkgs.runCommand "test-desktop-health-monitor"
     #!${pkgs.bash}/bin/bash
     printf 'Use%% Avail Size Mounted on\n'
     printf '%s%% %s %s /\n' "$FAKE_DISK_USED" 107374182400 1073741824000
+    printf '100%% 0 100 /home/alice/.zfs/snapshot/restore-point\n'
     if [[ " $* " == *' -l '* && -n "$FAKE_DATASET_USED" ]]; then
       printf '%s%% 0 161061273600 /home/alice/container store\n' "$FAKE_DATASET_USED"
     fi
