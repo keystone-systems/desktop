@@ -57,6 +57,12 @@ in
       };
 
       disk = {
+        allLocalFilesystems = mkOption {
+          type = types.bool;
+          default = true;
+          description = "Monitor all local filesystem mounts as well as path, plus explicit quotas on unmounted ZFS datasets and zvol parents. Memory filesystems are excluded.";
+        };
+
         path = mkOption {
           type = types.str;
           default = "/";

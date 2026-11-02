@@ -22,8 +22,11 @@ pkgs.runCommand "test-desktop-health-monitor"
 
     cat > "$fake_bin/df" <<'EOF'
     #!${pkgs.bash}/bin/bash
-    printf 'Use%% Avail Size\n'
-    printf '%s%% %s %s\n' "$FAKE_DISK_USED" 107374182400 1073741824000
+    printf 'Use%% Avail Size Mounted on\n'
+    printf '%s%% %s %s /\n' "$FAKE_DISK_USED" 107374182400 1073741824000
+    if [[ " $* " == *' -l '* && -n "$FAKE_DATASET_USED" ]]; then
+      printf '%s%% 0 161061273600 /home/alice/container store\n' "$FAKE_DATASET_USED"
+    fi
     EOF
     chmod +x "$fake_bin/df"
 
@@ -38,6 +41,18 @@ pkgs.runCommand "test-desktop-health-monitor"
     export KEYSTONE_HEALTH_STATE_DIR="$state_dir"
     export KEYSTONE_NOTIFY_SEND_BIN="$fake_bin/notify-send"
     export KEYSTONE_DF_BIN="$fake_bin/df"
+    cat > "$fake_bin/zfs" <<'EOF'
+    #!${pkgs.bash}/bin/bash
+    if [[ -n "$FAKE_ZFS_USED" ]]; then
+      printf 'rpool/vms %s 10 100 0 no\n' "$FAKE_ZFS_USED"
+      printf 'rpool/unmounted 10 %s 0 100 no\n' "$FAKE_ZFS_USED"
+      printf 'rpool/volume 10 10 0 - -\n'
+    fi
+    EOF
+    chmod +x "$fake_bin/zfs"
+    export KEYSTONE_ZFS_BIN="$fake_bin/zfs"
+    export FAKE_ZFS_USED=""
+    export FAKE_DATASET_USED=""
     export KEYSTONE_DISK_WARNING_USED_PERCENT=80
     export KEYSTONE_DISK_CRITICAL_USED_PERCENT=90
 
@@ -65,6 +80,35 @@ pkgs.runCommand "test-desktop-health-monitor"
     [[ "$(jq -r '.class' <<<"$warning_json")" == "warning" ]]
     [[ "$(jq -r '.class' <<<"$critical_json")" == "critical" ]]
     jq -e '.tooltip | contains("100GiB free")' <<<"$warning_json" >/dev/null
+
+    # Root remains healthy while an independent dataset fills its quota.
+    FAKE_DISK_USED=20 $disk_monitor notify
+    : > "$notify_log"
+    FAKE_DISK_USED=20 FAKE_DATASET_USED=95 $disk_monitor notify
+    FAKE_DISK_USED=20 FAKE_DATASET_USED=95 $disk_monitor notify
+    [[ "$(grep -c 'Disk space critically low' "$notify_log")" -eq 1 ]]
+    grep -q '/home/alice/container store is 95%' "$notify_log"
+    dataset_json="$(FAKE_DISK_USED=20 FAKE_DATASET_USED=95 $disk_monitor json)"
+    [[ "$(jq -r '.class' <<<"$dataset_json")" == critical ]]
+    jq -e '.tooltip | contains("/home/alice/container store")' <<<"$dataset_json" >/dev/null
+    # A second filesystem can escalate independently; duplicate root rows
+    # from the two df calls must not produce duplicate notifications.
+    FAKE_DISK_USED=96 FAKE_DATASET_USED=95 $disk_monitor notify
+    [[ "$(grep -c 'Disk space critically low' "$notify_log")" -eq 2 ]]
+    FAKE_DISK_USED=20 FAKE_DATASET_USED=20 $disk_monitor notify
+    FAKE_DISK_USED=20 FAKE_DATASET_USED=95 $disk_monitor notify
+    [[ "$(grep -c 'Disk space critically low' "$notify_log")" -eq 3 ]]
+    # Unmounted quota-bearing parents and refquota datasets are invisible
+    # to df but still need alerts; volume refquota dashes must be ignored.
+    FAKE_DISK_USED=20 FAKE_ZFS_USED=95 $disk_monitor notify
+    grep -q 'rpool/vms (quota) is 95%' "$notify_log"
+    grep -q 'rpool/unmounted (refquota) is 95%' "$notify_log"
+    single_json="$(KEYSTONE_DISK_ALL_LOCAL_FILESYSTEMS=0 FAKE_DISK_USED=20 FAKE_DATASET_USED=95 $disk_monitor json)"
+    [[ "$(jq -r '.class' <<<"$single_json")" == healthy ]]
+    if FAKE_DISK_USED=invalid $disk_monitor json; then
+      echo 'Malformed usage should fail' >&2
+      exit 1
+    fi
 
     rm -rf "$state_dir"
     mkdir -p "$state_dir"

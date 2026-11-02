@@ -63,6 +63,21 @@ are null (the standalone default).
 `nixosModules.default` (which dispatches on `keystone.desktop.environment`)
 is the supported entry point.
 
+## Storage warnings
+
+The existing `keystone-disk-monitor` user timer checks every minute. It warns
+at 80% usage and sends a persistent critical notification at 90%. Each local
+filesystem is tracked independently, including mounted ZFS datasets whose
+quotas can fill while `/` still has space. Explicit quota and refquota limits
+on unmounted ZFS datasets and zvol parents are checked too. Memory filesystems
+are excluded. Alerts rearm after usage falls below their threshold; no storage
+is deleted automatically. The desktop health indicator shows the highest usage
+and lists the checked filesystems in its tooltip.
+
+Home Manager options under `keystone.desktop.health.disk` configure
+`warningUsedPercent`, `criticalUsedPercent`, and `path`. Set
+`allLocalFilesystems = false` to monitor only `path`.
+
 ## Remote desktop
 
 Hyprland desktops can opt into a native RDP server:

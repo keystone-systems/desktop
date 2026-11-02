@@ -310,9 +310,13 @@ let
       coreutils
       jq
       libnotify
+      zfs
     ];
     text = ''
       export KEYSTONE_DISK_PATH=${escapeShellArg cfg.health.disk.path}
+      export KEYSTONE_DISK_ALL_LOCAL_FILESYSTEMS=${
+        if cfg.health.disk.allLocalFilesystems then "1" else "0"
+      }
       export KEYSTONE_DISK_WARNING_USED_PERCENT=${toString cfg.health.disk.warningUsedPercent}
       export KEYSTONE_DISK_CRITICAL_USED_PERCENT=${toString cfg.health.disk.criticalUsedPercent}
       ${builtins.readFile ./keystone-disk-monitor.sh}
