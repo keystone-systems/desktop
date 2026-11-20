@@ -1,7 +1,12 @@
 { pkgs, desktopInputs }:
 let
   system = pkgs.stdenv.hostPlatform.system;
-  quickshell = desktopInputs.quickshell.packages.${system}.quickshell;
+  # The pinned 0.3.1 source does not compile with Qt 6.12.
+  quickshell =
+    if pkgs.lib.versionAtLeast pkgs.qt6.qtbase.version "6.12" then
+      pkgs.quickshell
+    else
+      desktopInputs.quickshell.packages.${system}.quickshell;
   publicUpstreamScripts = [
     "omarchy-launch-shell"
     "omarchy-shell"
