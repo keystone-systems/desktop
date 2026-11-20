@@ -158,6 +158,10 @@
           hyprpolkitagent
           ;
 
+        hypr-rdp = hypr-rdp.packages.${system}.hypr-rdp.overrideAttrs (old: {
+          buildInputs = (old.buildInputs or [ ]) ++ [ pkgs.zstd ];
+        });
+
         # The composed terminal + desktop tree as one starter set. The two
         # manifests MUST NOT contain the same file path.
         dotfile-templates =
@@ -237,7 +241,6 @@
           home-manager
           hyprland
           hyprpaper
-          hypr-rdp
           omarchy
           terminal
           ;

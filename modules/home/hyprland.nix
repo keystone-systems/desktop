@@ -25,7 +25,7 @@ let
       ${builtins.readFile ./scripts/keystone-hyprland-power-log.py}
     '';
   };
-  hyprRdpPkg = desktopInputs.hypr-rdp.packages.${pkgs.stdenv.hostPlatform.system}.hypr-rdp;
+  hyprRdpPkg = desktopInputs.desktopSelf.packages.${pkgs.stdenv.hostPlatform.system}.hypr-rdp;
   remoteDesktopCommand = pkgs.writeShellApplication {
     name = "keystone-hypr-rdp";
     text = ''

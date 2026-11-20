@@ -14,7 +14,6 @@
   home-manager,
   hyprland,
   hyprpaper,
-  hypr-rdp,
   omarchy,
   terminal,
   system,
@@ -562,7 +561,7 @@ let
   );
   remoteDesktopUnit = homeRemoteDesktop.config.systemd.user.services.keystone-hypr-rdp;
   remoteDesktopSecureUnit = homeRemoteDesktopSecure.config.systemd.user.services.keystone-hypr-rdp;
-  remoteDesktopPackage = hypr-rdp.packages.${system}.hypr-rdp;
+  remoteDesktopPackage = self.packages.${system}.hypr-rdp;
   remoteDesktopDefaultOff =
     !(builtins.hasAttr "keystone-hypr-rdp" homeStandalone.config.systemd.user.services)
     && !(lib.elem remoteDesktopPackage homeStandalone.config.home.packages);
