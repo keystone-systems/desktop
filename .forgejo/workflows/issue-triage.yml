@@ -16,7 +16,7 @@ on:
 jobs:
   assign-triage-agent:
     # Never triage issues the automation itself opened.
-    if: github.event.issue.user.login != 'luce' && github.event.issue.user.login != 'drago' && github.event.issue.user.login != 'vega'
+    if: "!startsWith(github.event.issue.title, '[Awaiting selection]') && github.event.issue.user.login != 'luce' && github.event.issue.user.login != 'drago' && github.event.issue.user.login != 'vega'"
     # `native` because the docker-backed labels reach the instance through
     # 127.0.0.1, which is only Forgejo on the ocean host itself.
     runs-on: native
