@@ -1,0 +1,10 @@
+#!/usr/bin/env bash
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+unset WAYLAND_DISPLAY HYPRLAND_INSTANCE_SIGNATURE XDG_RUNTIME_DIR
+
+git ls-files -z -- '*.nix' | xargs -0 nix-instantiate --parse >/dev/null
+git ls-files -z -- '*.sh' bin/check-native | xargs -0 -n1 bash -n
+bash tests/template-lint.sh templates
+python3 tests/module/desktop-timezone-test.py modules/nixos/scripts/timezone-apply.sh
+python3 tests/module/desktop-power-debug-log-test.py modules/home/scripts/keystone-hyprland-power-log.py

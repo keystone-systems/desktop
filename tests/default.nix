@@ -686,11 +686,7 @@ in
         nativeBuildInputs = [ pkgs.gnugrep ];
       }
       ''
-        if grep -rnE "/home/|ncrmro|desc:.*Dell|voice-memo" ${templates}; then
-          echo "FAIL: personal literals found in templates/ (see matches above)" >&2
-          exit 1
-        fi
-        echo "PASS: templates are free of personal literals"
+        bash ${./template-lint.sh} ${templates}
         touch "$out"
       '';
 

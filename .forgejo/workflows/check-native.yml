@@ -1,0 +1,20 @@
+name: Desktop native checks
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  desktop:
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: native
+    timeout-minutes: 3
+    steps:
+      - uses: https://data.forgejo.org/actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          github-server-url: https://git.ncrmro.com
+          persist-credentials: false
+      - name: Check desktop scripts, templates and runtime fixtures
+        run: time bash bin/check-native
